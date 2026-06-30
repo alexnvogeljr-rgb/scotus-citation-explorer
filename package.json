@@ -1,0 +1,10 @@
+{
+  "name": "scotus-citation-explorer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Interactive Supreme Court citation network explorer.",
+  "scripts": {
+    "start": "python3 -m http.server 4173",
+    "serve": "python3 -m http.server 4173"
+  }
+}
