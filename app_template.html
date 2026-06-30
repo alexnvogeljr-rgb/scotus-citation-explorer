@@ -144,7 +144,7 @@ function buildAreaLayout(){
 }
 const outA=Array.from({length:N},()=>[]), inA=Array.from({length:N},()=>[]);
 for(let k=0;k<E;k++){outA[D.EU[k]].push(D.EV[k]);inA[D.EV[k]].push(D.EU[k]);}
-let scale=1, tx=0, ty=0;
+let scale=1, fittedScale=1, tx=0, ty=0;
 function world2screen(x,y){return [x*scale+tx, y*scale+ty];}
 function screen2world(x,y){return [(x-tx)/scale,(y-ty)/scale];}
 function zoomAt(mx,my,factor){const[wx,wy]=screen2world(mx,my);scale=Math.max(0.02,Math.min(3000,scale*factor));tx=mx-wx*scale;ty=my-wy*scale;needs=true;}
@@ -179,6 +179,7 @@ function fit(){
   for(let i=0;i<N;i++){if(layout!=='area'&&PY[i]>1010)continue;if(PX[i]<minx)minx=PX[i];if(PY[i]<miny)miny=PY[i];if(PX[i]>maxx)maxx=PX[i];if(PY[i]>maxy)maxy=PY[i];}
   const pad=60, topPad=layout==='area'?(barEl.offsetHeight||58)+36:pad, bottomPad=60;
   const sx=(W-pad*2)/(maxx-minx), sy=(H-topPad-bottomPad)/(maxy-miny); scale=Math.min(sx,sy);
+  fittedScale=scale;
   tx=pad+(W-pad*2-(maxx-minx)*scale)/2-minx*scale;
   ty=topPad+(H-topPad-bottomPad-(maxy-miny)*scale)/2-miny*scale; needs=true;
 }
@@ -199,16 +200,14 @@ function drawLine(u,v,color,w){
 function labelParts(label){
   const clean=label.replace(/^The\s+/i,'');
   const m=clean.match(/^(.*?)\s+v\.?\s+(.*)$/i);
-  if(m)return[m[1],m[2]];
+  if(m)return[m[1]+' v.',m[2]];
   const ir=clean.match(/^(In\s+re)\s+(.*)$/i);
   if(ir)return[ir[1],ir[2]];
   return[clean];
 }
-function fitLabelLine(text,maxW){
-  let s=text.replace(/\s+/g,' ').trim();
-  if(ctx.measureText(s).width<=maxW)return s;
-  while(s.length>1&&ctx.measureText(s+'...').width>maxW)s=s.slice(0,-1).trim();
-  return s.length>1?s+'...':s;
+function zoomLabelFactor(){
+  const z=Math.max(1,scale/(fittedScale||scale||1));
+  return Math.max(0.45,1/Math.sqrt(z));
 }
 function drawLandmarkLabels(){
   if(!showLandmarks||dragging)return;
@@ -218,15 +217,17 @@ function drawLandmarkLabels(){
     if(pathNodeSet&&pathNodes.length&&!pathNodeSet.has(i))continue;
     const p=world2screen(PX[i],PY[i]); if(p[0]<-40||p[0]>W+40||p[1]<-40||p[1]>H+40)continue;
     const r=rad(i); if(r<9)continue;
-    const lines=labelParts(cleanCaseTitle(i)).slice(0,2);
-    let font=Math.min(10.5,Math.max(5.5,r*0.42));
-    const maxW=r*1.58, maxH=r*1.22;
-    while(font>5&&(font*0.94*lines.length)>maxH)font-=0.5;
+    const lines=labelParts(cleanCaseTitle(i)).slice(0,2).map(s=>s.replace(/\s+/g,' ').trim()).filter(Boolean);
+    const shrink=zoomLabelFactor();
+    let font=Math.min(10.5,Math.max(5.4,r*0.44))*shrink;
+    const minFont=4, maxW=r*1.75, maxH=r*1.42;
     ctx.font='700 '+font+'px -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif';
-    const shown=lines.map(s=>fitLabelLine(s,maxW)).filter(Boolean);
-    const lh=font*0.94, top=p[1]-((shown.length-1)*lh)/2;
-    ctx.lineWidth=Math.max(1.6,font*0.24);ctx.strokeStyle='rgba(5,7,12,0.74)';ctx.fillStyle='rgba(255,255,255,0.94)';
-    shown.forEach((line,n)=>{const y=top+n*lh;ctx.strokeText(line,p[0],y);ctx.fillText(line,p[0],y);});
+    while(font>minFont&&(font*0.92*lines.length>maxH||Math.max(...lines.map(s=>ctx.measureText(s).width))>maxW)){
+      font-=0.25;ctx.font='700 '+font+'px -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif';
+    }
+    const lh=font*0.92, top=p[1]-((lines.length-1)*lh)/2;
+    ctx.lineWidth=Math.max(1.2,font*0.22);ctx.strokeStyle='rgba(5,7,12,0.72)';ctx.fillStyle='rgba(255,255,255,0.95)';
+    lines.forEach((line,n)=>{const y=top+n*lh;ctx.strokeText(line,p[0],y);ctx.fillText(line,p[0],y);});
   }
   ctx.restore();
 }
