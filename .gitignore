@@ -1,0 +1,7 @@
+.DS_Store
+.env
+*.log
+__pycache__/
+.python-version
+public_site/
+scotus-citation-explorer-site.zip

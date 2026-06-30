@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SCOTUS Citation Explorer</title>
+<meta name="description" content="Explore 4,133 U.S. Supreme Court opinions and 55,136 citations as an interactive citation network.">
+<meta name="theme-color" content="#07070d">
+<meta property="og:title" content="SCOTUS Citation Explorer">
+<meta property="og:description" content="An interactive map of Supreme Court opinions, citation links, and doctrinal communities.">
+<meta property="og:type" content="website">
+<meta property="og:image" content="citation_galaxy.png">
+<style>
+:root{--bg:#07070d;--panel:#11131c;--ink:#e7ecf5;--mut:#8b95ab;--line:#222637;--bar-h:58px;}
+*{box-sizing:border-box} html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:13px/1.45 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;overflow:hidden}
+#wrap{position:fixed;inset:0}
+canvas{position:fixed;top:0;left:0;width:100vw;height:100vh;display:block;cursor:grab}
+canvas.drag{cursor:grabbing}
+.bar{position:absolute;top:0;left:0;right:0;display:flex;gap:10px;align-items:center;padding:9px 12px;background:linear-gradient(#0b0d16f5,#0b0d16ad);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);z-index:5;flex-wrap:wrap}
+.brand{display:flex;gap:10px;align-items:baseline;min-width:260px}
+.tools{display:flex;gap:8px;align-items:center;flex:1;flex-wrap:wrap}
+.bar h1{font-size:14px;margin:0 2px 0 0;font-weight:700;letter-spacing:.2px;white-space:nowrap}
+.bar .sub{color:var(--mut);font-size:11px;white-space:nowrap}
+.bar input,.bar button{background:#171a26;border:1px solid var(--line);color:var(--ink);border-radius:7px;padding:6px 9px;font-size:12px;min-height:32px}
+.bar input{width:min(28vw,270px);min-width:190px}
+.bar input.loading{border-color:#7da2ff}
+.bar button{cursor:pointer;white-space:nowrap} .bar button:hover{border-color:#3a4d7a}
+.bar button:focus-visible,.bar input:focus-visible{outline:2px solid #7da2ff;outline-offset:2px}
+.bar button.on{background:#24314e;border-color:#3f5d8f}
+.spacer{flex:1}
+#legend{position:absolute;left:12px;bottom:12px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 11px;z-index:5;max-width:230px}
+#legend b{font-size:11px;color:var(--mut);font-weight:600;text-transform:uppercase;letter-spacing:.4px}
+.lgctl{font-weight:400;text-transform:none;letter-spacing:0;font-size:11px}
+.lgctl a{color:#7da2ff;cursor:pointer} .lgctl a:hover{text-decoration:underline}
+.li{display:flex;align-items:center;gap:7px;padding:2px 0;cursor:pointer;opacity:1}
+.li.off{opacity:.32}
+.li.cmpA,.li.cmpB{opacity:1;border-radius:6px;padding-left:4px;background:#24314e}
+.li.cmpB{background:#33294a}
+.sw{width:11px;height:11px;border-radius:3px;flex:none}
+.li span{font-size:11.5px}
+#stats{position:absolute;right:12px;bottom:12px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 11px;z-index:5;color:var(--mut);font-size:11px;text-align:right;max-width:320px}
+#stats b{color:var(--ink)}
+#tip{position:absolute;z-index:9;pointer-events:none;background:#0e1018f2;border:1px solid var(--line);border-radius:8px;padding:8px 10px;max-width:300px;display:none;box-shadow:0 6px 24px #000a}
+#tip .t{font-weight:700;margin-bottom:3px}
+#tip .m{color:var(--mut);font-size:11px}
+#tip .go{color:#7da2ff;font-size:11px;margin-top:4px}
+#panel{position:absolute;top:calc(var(--bar-h) + 12px);right:12px;width:min(360px,calc(100vw - 24px));max-height:calc(100vh - var(--bar-h) - 24px);overflow:auto;background:#10131dd9;border:1px solid var(--line);border-radius:10px;box-shadow:0 12px 36px #0009;backdrop-filter:blur(8px);z-index:7;padding:12px}
+#panel.hidden{display:none}
+.ph{display:flex;align-items:flex-start;gap:10px;margin-bottom:9px}
+.ph h2{font-size:15px;line-height:1.25;margin:0;flex:1}
+.x{width:26px;height:26px;padding:0!important;min-height:0!important}
+.meta{color:var(--mut);font-size:11px;margin-bottom:10px}
+.pbtns{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:10px 0}
+.pbtns button,.pbtns a,.casebtn{background:#171a26;border:1px solid var(--line);color:var(--ink);border-radius:7px;padding:6px 8px;font-size:12px;cursor:pointer;text-align:left;text-decoration:none}
+.pbtns button:hover,.pbtns a:hover,.casebtn:hover{border-color:#3a4d7a}
+.section{border-top:1px solid var(--line);padding-top:9px;margin-top:9px}
+.section h3{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--mut);margin:0 0 6px}
+.casebtn{display:block;width:100%;margin:4px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pathstat{font-size:11px;color:var(--mut);margin-top:5px}
+.note{position:absolute;top:calc(var(--bar-h) + 10px);left:50%;transform:translateX(-50%);background:#1a2336;border:1px solid #2b3a5c;color:#cdd8ee;padding:6px 12px;border-radius:20px;font-size:11.5px;z-index:6;white-space:nowrap}
+.area-layout .note,.area-layout #stats{display:none}
+kbd{background:#222637;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;font-size:11px}
+@media (max-width:900px){
+  .note,#stats{display:none}
+  .bar{align-items:stretch;padding:8px}
+  .brand{width:100%;min-width:0;justify-content:space-between}
+  .tools{width:100%;flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px}
+  .tools::-webkit-scrollbar{height:0}
+  .bar input{width:220px;min-width:220px}
+  #legend{left:8px;right:8px;bottom:8px;max-width:none;max-height:34vh;overflow:auto;border-radius:8px}
+  #legitems{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:10px}
+  .li{min-height:26px}
+}
+@media (max-width:560px){
+  .tools{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));overflow:visible}
+  .bar input{grid-column:1/-1;grid-row:1;width:100%;min-width:0}
+  #bLayout{grid-column:1/3;grid-row:2}
+  #bEdges{grid-column:3/5;grid-row:2}
+  #bLandmarks{grid-column:1/3;grid-row:3}
+  #bCompare{grid-column:3/5;grid-row:3}
+  #bFit{grid-column:1;grid-row:4}
+  #bClear{grid-column:2;grid-row:4}
+  #bZin{grid-column:3;grid-row:4}
+  #bZout{grid-column:4;grid-row:4}
+  .spacer{display:none}
+  #panel{left:8px;right:8px;top:calc(var(--bar-h) + 8px);width:auto;max-height:42vh}
+}
+@media (max-width:430px){
+  .brand .sub{display:none}
+  .bar input{width:100%;min-width:0}
+  .bar button{padding-inline:8px}
+  .li span{font-size:10.5px}
+}
+</style></head>
+<body><div id="wrap">
+<canvas id="c"></canvas>
+<div class="bar" role="banner">
+  <div class="brand"><h1>&#9878;&#65038; SCOTUS Citation Explorer</h1><span class="sub" id="subline"></span></div>
+  <div class="tools" role="toolbar" aria-label="Explorer controls">
+  <input id="q" aria-label="Search cases" placeholder="Search case name or CL ID&#8230;" size="18" autocomplete="off">
+  <button id="bLayout" type="button">Layout: Citation web</button>
+  <button id="bEdges" type="button" aria-pressed="false">Show all edges: off</button>
+  <button id="bLandmarks" type="button" class="on" aria-pressed="true">Landmarks: on</button>
+  <button id="bCompare" type="button" aria-pressed="false">Compare areas: off</button>
+  <button id="bZin" type="button" title="Zoom in" aria-label="Zoom in">+</button>
+  <button id="bZout" type="button" title="Zoom out" aria-label="Zoom out">&#8722;</button>
+  <button id="bFit" type="button">Reset view</button>
+  <button id="bClear" type="button">Clear</button>
+  <span class="spacer"></span>
+  </div>
+</div>
+<div class="note">1792-2016 core citation network &#183; CourtListener-linked opinions</div>
+<div id="legend"><b>Area of law <span class="lgctl">&#8212; <a id="selAll">all</a> &#183; <a id="selNone">none</a></span></b><div id="legitems"></div></div>
+<div id="stats"></div>
+<div id="tip"></div>
+<aside id="panel" class="hidden" aria-live="polite"></aside>
+</div>
+<script>
+/*__DATA__*/
+const D=window.DATA, N=D.IDS.length, E=D.EU.length;
+const cv=document.getElementById('c'), ctx=cv.getContext('2d'), barEl=document.querySelector('.bar');
+let DPR=Math.min(2,window.devicePixelRatio||1), W=0,H=0;
+const PX=new Float32Array(N), PY=new Float32Array(N);
+for(let i=0;i<N;i++){PX[i]=D.WX[i];PY[i]=D.WY[i];}
+let layout='web';
+const AX=new Float32Array(N), AY=new Float32Array(N), AREA_LABELS=[];
+function clamp(v,lo,hi){return Math.max(lo,Math.min(hi,v));}
+function buildAreaLayout(){
+  const groups=Array.from({length:D.IANAMES.length},()=>[]);
+  for(let i=0;i<N;i++)groups[D.IA[i]].push(i);
+  const cols=5, areaW=1550, areaH=1080, mx=115, my=125, sx=(areaW-mx*2)/(cols-1), sy=(areaH-my*2)/2;
+  for(let ia=0;ia<groups.length;ia++){
+    const g=groups[ia], cx=mx+(ia%cols)*sx, cy=my+Math.floor(ia/cols)*sy;
+    if(!g.length){AREA_LABELS[ia]={x:cx,y:cy,r:0,n:0};continue;}
+    let bx=0,by=0;
+    for(const i of g){bx+=D.CX[i]??D.WX[i];by+=D.CY[i]??D.WY[i];}
+    bx/=g.length;by/=g.length;
+    const ds=g.map(i=>Math.hypot((D.CX[i]??D.WX[i])-bx,(D.CY[i]??D.WY[i])-by)).sort((a,b)=>a-b);
+    const target=Math.min(88,30+Math.sqrt(g.length)*1.6), p90=ds[Math.floor(ds.length*.9)]||1;
+    const s=Math.min(0.95,target/p90), lim=target*1.16;
+    for(const i of g){
+      AX[i]=cx+clamp(((D.CX[i]??D.WX[i])-bx)*s,-lim,lim);
+      AY[i]=cy+clamp(((D.CY[i]??D.WY[i])-by)*s,-lim,lim);
+    }
+    AREA_LABELS[ia]={x:cx,y:cy,r:target,n:g.length};
+  }
+}
+const outA=Array.from({length:N},()=>[]), inA=Array.from({length:N},()=>[]);
+for(let k=0;k<E;k++){outA[D.EU[k]].push(D.EV[k]);inA[D.EV[k]].push(D.EU[k]);}
+let scale=1, tx=0, ty=0;
+function world2screen(x,y){return [x*scale+tx, y*scale+ty];}
+function screen2world(x,y){return [(x-tx)/scale,(y-ty)/scale];}
+function zoomAt(mx,my,factor){const[wx,wy]=screen2world(mx,my);scale=Math.max(0.02,Math.min(3000,scale*factor));tx=mx-wx*scale;ty=my-wy*scale;needs=true;}
+function rad(i){return 0.7+Math.pow(D.DEG[i]||0,0.72)*0.52;}
+const active=new Set(D.IANAMES.map((_,i)=>i));
+const LANDMARKS=Array.from({length:N},(_,i)=>i).sort((a,b)=>(D.DEG[b]||0)-(D.DEG[a]||0)).slice(0,50);
+let hover=-1, sel=-1, showEdges=false, showLandmarks=true, compareMode=false, dragging=false, didDrag=false, lastX=0,lastY=0, downX=0,downY=0;
+let compareAreas=[], pathStart=-1, pathEnd=-1, pathNodes=[], pathPairs=[], pathNodeSet=null, pathEdgeSet=null;
+let needs=true;
+function edgeKey(a,b){return a<b?a+'-'+b:b+'-'+a;}
+function isNodeEligible(i){const ia=D.IA[i];return active.has(ia)&&(!compareMode||compareAreas.length===0||compareAreas.includes(ia));}
+let grid=null, GCELL=7, GW=0, GMINX=0, GMINY=0;
+function buildGrid(){
+  let minx=1e9,miny=1e9,maxx=-1e9,maxy=-1e9;
+  for(let i=0;i<N;i++){if(PX[i]<minx)minx=PX[i];if(PY[i]<miny)miny=PY[i];if(PX[i]>maxx)maxx=PX[i];if(PY[i]>maxy)maxy=PY[i];}
+  GMINX=minx;GMINY=miny;GW=Math.ceil((maxx-minx)/GCELL)+1;
+  grid=new Map();
+  for(let i=0;i<N;i++){const cx=((PX[i]-minx)/GCELL)|0, cy=((PY[i]-miny)/GCELL)|0;const key=cy*GW+cx;let a=grid.get(key);if(!a){a=[];grid.set(key,a);}a.push(i);}
+}
+function pick(sx,sy){
+  const [wx,wy]=screen2world(sx,sy); const thr=Math.max(6/scale, 3);
+  const cx=((wx-GMINX)/GCELL)|0, cy=((wy-GMINY)/GCELL)|0; let best=-1,bd=1e18;
+  const R=Math.max(1,Math.ceil(thr/GCELL));
+  for(let yy=cy-R;yy<=cy+R;yy++)for(let xx=cx-R;xx<=cx+R;xx++){
+    const a=grid.get(yy*GW+xx); if(!a)continue;
+    for(const i of a){if(!isNodeEligible(i))continue;const dx=PX[i]-wx,dy=PY[i]-wy,d=dx*dx+dy*dy; const rr=Math.max(thr, rad(i)/scale); if(d<rr*rr&&d<bd){bd=d;best=i;}}
+  }
+  return best;
+}
+function fit(){
+  let minx=1e9,miny=1e9,maxx=-1e9,maxy=-1e9;
+  for(let i=0;i<N;i++){if(layout!=='area'&&PY[i]>1010)continue;if(PX[i]<minx)minx=PX[i];if(PY[i]<miny)miny=PY[i];if(PX[i]>maxx)maxx=PX[i];if(PY[i]>maxy)maxy=PY[i];}
+  const pad=60, topPad=layout==='area'?(barEl.offsetHeight||58)+36:pad, bottomPad=60;
+  const sx=(W-pad*2)/(maxx-minx), sy=(H-topPad-bottomPad)/(maxy-miny); scale=Math.min(sx,sy);
+  tx=pad+(W-pad*2-(maxx-minx)*scale)/2-minx*scale;
+  ty=topPad+(H-topPad-bottomPad-(maxy-miny)*scale)/2-miny*scale; needs=true;
+}
+function syncChrome(){document.documentElement.style.setProperty('--bar-h',(barEl.offsetHeight||58)+'px');}
+function resize(){W=window.innerWidth;H=window.innerHeight;syncChrome();cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);cv.style.width=W+'px';cv.style.height=H+'px';ctx.setTransform(DPR,0,0,DPR,0,0);needs=true;}
+const COL=D.IACOLORS;
+function cleanCaseTitle(i){
+  return titleFor(i).replace(/\s+[\u00b7·].*$/,'').replace(/\s+/g,' ').trim();
+}
+function shortTitle(i){
+  const raw=cleanCaseTitle(i);
+  return raw.length>34?raw.slice(0,31)+'...':raw;
+}
+function drawLine(u,v,color,w){
+  const a=world2screen(PX[u],PY[u]),b=world2screen(PX[v],PY[v]);
+  ctx.strokeStyle=color;ctx.lineWidth=w;ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke();
+}
+function labelParts(label){
+  const clean=label.replace(/^The\s+/i,'');
+  const m=clean.match(/^(.*?)\s+v\.?\s+(.*)$/i);
+  if(m)return[m[1],m[2]];
+  const ir=clean.match(/^(In\s+re)\s+(.*)$/i);
+  if(ir)return[ir[1],ir[2]];
+  return[clean];
+}
+function fitLabelLine(text,maxW){
+  let s=text.replace(/\s+/g,' ').trim();
+  if(ctx.measureText(s).width<=maxW)return s;
+  while(s.length>1&&ctx.measureText(s+'...').width>maxW)s=s.slice(0,-1).trim();
+  return s.length>1?s+'...':s;
+}
+function drawLandmarkLabels(){
+  if(!showLandmarks||dragging)return;
+  ctx.save();ctx.textAlign='center';ctx.textBaseline='middle';
+  for(const i of LANDMARKS){
+    if(!isNodeEligible(i))continue;
+    if(pathNodeSet&&pathNodes.length&&!pathNodeSet.has(i))continue;
+    const p=world2screen(PX[i],PY[i]); if(p[0]<-40||p[0]>W+40||p[1]<-40||p[1]>H+40)continue;
+    const r=rad(i); if(r<9)continue;
+    const lines=labelParts(cleanCaseTitle(i)).slice(0,2);
+    let font=Math.min(10.5,Math.max(5.5,r*0.42));
+    const maxW=r*1.58, maxH=r*1.22;
+    while(font>5&&(font*0.94*lines.length)>maxH)font-=0.5;
+    ctx.font='700 '+font+'px -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif';
+    const shown=lines.map(s=>fitLabelLine(s,maxW)).filter(Boolean);
+    const lh=font*0.94, top=p[1]-((shown.length-1)*lh)/2;
+    ctx.lineWidth=Math.max(1.6,font*0.24);ctx.strokeStyle='rgba(5,7,12,0.74)';ctx.fillStyle='rgba(255,255,255,0.94)';
+    shown.forEach((line,n)=>{const y=top+n*lh;ctx.strokeText(line,p[0],y);ctx.fillText(line,p[0],y);});
+  }
+  ctx.restore();
+}
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  if(compareMode&&compareAreas.length===2&&!dragging){
+    const [a0,a1]=compareAreas;ctx.strokeStyle='rgba(125,162,255,0.18)';ctx.lineWidth=0.7;ctx.beginPath();
+    for(let k=0;k<E;k++){const u=D.EU[k],v=D.EV[k];if(!active.has(D.IA[u])||!active.has(D.IA[v]))continue;const cross=(D.IA[u]===a0&&D.IA[v]===a1)||(D.IA[u]===a1&&D.IA[v]===a0);if(!cross)continue;const a=world2screen(PX[u],PY[u]),b=world2screen(PX[v],PY[v]);ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);}
+    ctx.stroke();
+  } else if(showEdges && !dragging){
+    ctx.strokeStyle='rgba(110,150,255,0.05)';ctx.lineWidth=0.4;ctx.beginPath();
+    for(let k=0;k<E;k++){const u=D.EU[k],v=D.EV[k];if(!isNodeEligible(u)||!isNodeEligible(v))continue;const a=world2screen(PX[u],PY[u]),b=world2screen(PX[v],PY[v]);ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);}
+    ctx.stroke();
+  }
+  const focus=hover>=0?hover:sel;
+  if(focus>=0){
+    ctx.lineWidth=0.8;
+    ctx.strokeStyle='rgba(255,210,120,0.55)';ctx.beginPath();
+    for(const v of outA[focus]){if(!isNodeEligible(v))continue;const a=world2screen(PX[focus],PY[focus]),b=world2screen(PX[v],PY[v]);ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);}
+    ctx.stroke();
+    ctx.strokeStyle='rgba(120,200,255,0.5)';ctx.beginPath();
+    for(const v of inA[focus]){if(!isNodeEligible(v))continue;const a=world2screen(PX[focus],PY[focus]),b=world2screen(PX[v],PY[v]);ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);}
+    ctx.stroke();
+  }
+  const dim = focus>=0;
+  const nb = dim? new Set([focus,...outA[focus],...inA[focus]]) : null;
+  if(pathPairs.length){for(const [u,v] of pathPairs)drawLine(u,v,'rgba(255,232,140,0.9)',2.2);}
+  for(let i=0;i<N;i++){
+    const ia=D.IA[i]; if(!isNodeEligible(i))continue;
+    const p=world2screen(PX[i],PY[i]); if(p[0]<-20||p[0]>W+20||p[1]<-20||p[1]>H+20)continue;
+    let r=rad(i); let al=1;
+    if(pathNodeSet&&pathNodes.length){if(pathNodeSet.has(i)){r+=1.8;al=1;}else{al=0.11;}}
+    if(dim){ if(nb.has(i)){al=1; r=i===focus?r+1.5:r;} else {al=0.12;} }
+    ctx.globalAlpha=al; ctx.fillStyle=COL[ia];
+    ctx.beginPath();ctx.arc(p[0],p[1],r,0,6.2832);ctx.fill();
+    ctx.strokeStyle='rgba(4,6,12,0.54)';ctx.lineWidth=Math.max(0.35,Math.min(0.9,r*0.14));ctx.stroke();
+    if(i===focus){ctx.globalAlpha=1;ctx.lineWidth=1.5;ctx.strokeStyle='#fff';ctx.beginPath();ctx.arc(p[0],p[1],r+3,0,6.2832);ctx.stroke();}
+    if(i===pathStart||i===pathEnd){ctx.globalAlpha=1;ctx.lineWidth=2;ctx.strokeStyle=i===pathStart?'#ffe28a':'#9ed9ff';ctx.beginPath();ctx.arc(p[0],p[1],r+5,0,6.2832);ctx.stroke();}
+  }
+  ctx.globalAlpha=1;
+  drawLandmarkLabels();
+  if(layout==='area'){
+    ctx.save();ctx.font='600 11px -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif';ctx.textAlign='center';ctx.textBaseline='bottom';ctx.lineWidth=3;ctx.strokeStyle='rgba(7,7,13,0.92)';
+    for(let ia=0;ia<AREA_LABELS.length;ia++){if(!active.has(ia))continue;const a=AREA_LABELS[ia],p=world2screen(a.x,a.y-a.r-10/scale);if(p[0]<-120||p[0]>W+120||p[1]<-30||p[1]>H+30)continue;ctx.strokeText(D.IANAMES[ia],p[0],p[1]);ctx.fillStyle='rgba(231,236,245,0.82)';ctx.fillText(D.IANAMES[ia],p[0],p[1]);}
+    ctx.restore();
+  }
+}
+function loop(){ if(needs){try{draw();}catch(err){console.error('draw error',err);} needs=false;} requestAnimationFrame(loop); }
+// ---- live case-name lookup from CourtListener (anonymous search API) ----
+let lastMouse={x:0,y:0};
+const CACHE_KEY='scotus-case-name-cache-v1';
+let storedNames={};try{storedNames=JSON.parse(localStorage.getItem(CACHE_KEY)||'{}')||{};}catch(e){}
+const nameCache={...storedNames}, citeCache={}, urlCache={}, tipEl=document.getElementById('tip'), qEl=document.getElementById('q'), panelEl=document.getElementById('panel');
+let lookupPausedUntil=0, hoverFetchTimer=0;
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function saveNameCache(){try{localStorage.setItem(CACHE_KEY,JSON.stringify(Object.fromEntries(Object.entries(nameCache).filter(([,v])=>typeof v==='string'&&v))));}catch(e){}}
+function absoluteCourtListenerUrl(url){
+  if(!url)return'';
+  return url.startsWith('http')?url:'https://www.courtlistener.com'+url;
+}
+function slugifyCaseName(s){
+  return s.toLowerCase().replace(/&/g,' and ').replace(/['\u2019]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');
+}
+function caseUrl(i){
+  const id=D.IDS[i], cached=absoluteCourtListenerUrl(urlCache[id]||'');
+  if(cached)return cached;
+  const title=cleanCaseTitle(i);
+  if(/^(CourtListener #|Looking up|CourtListener lookup)/i.test(title))return 'https://www.courtlistener.com/?q='+encodeURIComponent('id:'+id);
+  const slug=slugifyCaseName(title);
+  if(slug)return 'https://www.courtlistener.com/opinion/'+id+'/'+slug+'/';
+  return 'https://www.courtlistener.com/?q='+encodeURIComponent('id:'+id);
+}
+function handleLookupFailure(id,j){
+  const detail=String(j&&j.detail||'');
+  if(/throttled|rate limit/i.test(detail)){
+    const m=detail.match(/(?:available in|Expected available in)\s+(\d+)/i);
+    lookupPausedUntil=Date.now()+((m?Number(m[1]):90)+2)*1000;
+  }
+  if(id)delete nameCache[id];
+}
+function scheduleNameFetch(idx){clearTimeout(hoverFetchTimer);if(idx<0)return;hoverFetchTimer=setTimeout(()=>{if(hover===idx)fetchName(idx);},360);}
+function fetchName(idx){
+  const id=D.IDS[idx]; if(D.NAME&&D.NAME[idx])return; if(typeof nameCache[id]==='string'&&nameCache[id])return; if(nameCache[id]===null)return;
+  if(Date.now()<lookupPausedUntil){if(hover===idx)renderTip(idx,lastMouse.x,lastMouse.y);return;}
+  nameCache[id]=null;
+  fetch('https://www.courtlistener.com/api/rest/v4/search/?type=o&q=id%3A'+encodeURIComponent(id),{headers:{'Accept':'application/json'}})
+    .then(async r=>({ok:r.ok,j:await r.json().catch(()=>null)})).then(({ok,j})=>{
+      if(!ok){handleLookupFailure(id,j);if(hover===idx)renderTip(idx,lastMouse.x,lastMouse.y);return;}
+      const res=j&&j.results&&j.results[0];
+      if(res){ nameCache[id]=res.caseName||res.case_name||''; const c=(res.citation||res.citations||[]).find(x=>/U\.S\./.test(x)); citeCache[id]=c||''; urlCache[id]=absoluteCourtListenerUrl(res.absolute_url||''); saveNameCache(); }
+      else nameCache[id]='';
+      if(hover===idx) renderTip(idx,lastMouse.x,lastMouse.y);
+      if(sel===idx) renderPanel(idx);
+    }).catch(()=>{ delete nameCache[id]; if(hover===idx) renderTip(idx,lastMouse.x,lastMouse.y); });
+}
+function titleFor(i){
+  const id=D.IDS[i];
+  if(D.NAME&&D.NAME[i]) return D.NAME[i];
+  if(typeof nameCache[id]==='string'&&nameCache[id]) return nameCache[id]+(citeCache[id]?(' · '+citeCache[id]):'');
+  if(nameCache[id]===null) return 'Looking up case name…';
+  if(Date.now()<lookupPausedUntil) return 'CourtListener lookup is rate-limited';
+  return 'CourtListener #'+id;
+}
+function applyNameRecord(id,rec){
+  if(!rec)return;
+  if(typeof rec==='string'){nameCache[id]=rec;}
+  else{nameCache[id]=rec.name||rec.case_name||rec.caseName||'';citeCache[id]=rec.citation||rec.us_cite||rec.usCite||'';urlCache[id]=absoluteCourtListenerUrl(rec.url||rec.absolute_url||'');}
+}
+function loadStaticNames(){
+  fetch('case_names.json',{cache:'force-cache'}).then(r=>r.ok?r.json():null).then(j=>{
+    if(!j)return;
+    for(const id in j)applyNameRecord(id,j[id]);
+    saveNameCache();needs=true;
+    if(hover>=0)renderTip(hover,lastMouse.x,lastMouse.y);
+    if(sel>=0)renderPanel(sel);
+  }).catch(()=>{});
+}
+function renderTip(i,x,y){
+  if(i<0){ tipEl.style.display='none'; return; }
+  const tw=Math.min(300,W-24); tipEl.style.maxWidth=tw+'px';
+  tipEl.style.display='block'; tipEl.style.left=Math.max(12,Math.min(W-tw-12,x+14))+'px'; tipEl.style.top=Math.max(12,Math.min(H-110,y+14))+'px';
+  tipEl.innerHTML='<div class="t">'+esc(titleFor(i))+'</div><div class="m">'+(D.YR[i]||'&#8212;')+' &#183; '+esc(D.IANAMES[D.IA[i]])+'<br>Cited by '+D.DEG[i]+' later opinions &#183; cites '+outA[i].length+' shown</div><div class="go">click for case details &#8594;</div>';
+}
+function caseButton(i){return '<button class="casebtn" data-case="'+i+'">'+esc(shortTitle(i))+' <span class="meta">'+(D.YR[i]||'')+'</span></button>';}
+function caseList(arr,max){return arr.slice().sort((a,b)=>(D.DEG[b]||0)-(D.DEG[a]||0)).slice(0,max).map(caseButton).join('')||'<div class="meta">None in this filtered graph</div>';}
+function pathLabel(){if(pathStart<0&&pathEnd<0)return 'No path endpoints set';return 'Start: '+(pathStart>=0?shortTitle(pathStart):'none')+'<br>End: '+(pathEnd>=0?shortTitle(pathEnd):'none')+(pathNodes.length?'<br>'+pathNodes.length+' cases in shortest connection':'');}
+function renderPanel(i){
+  if(i<0){panelEl.classList.add('hidden');return;}
+  const id=D.IDS[i], title=titleFor(i);
+  panelEl.classList.remove('hidden');
+  panelEl.innerHTML='<div class="ph"><h2>'+esc(title)+'</h2><button class="x" data-act="close">×</button></div>'+
+    '<div class="meta">'+(D.YR[i]||'Unknown year')+' &#183; '+esc(D.IANAMES[D.IA[i]])+'<br>Cited by '+D.DEG[i]+' later opinions &#183; cites '+outA[i].length+' shown<br>CourtListener #'+esc(id)+'</div>'+
+    '<div class="pbtns"><button data-act="start">Set path start</button><button data-act="end">Set path end</button><a href="'+esc(caseUrl(i))+'" target="_blank" rel="noopener">Open CourtListener</a><button data-act="clearPath">Clear path</button></div>'+
+    '<div class="pathstat">'+pathLabel()+'</div>'+
+    '<div class="section"><h3>Cites</h3>'+caseList(outA[i],7)+'</div>'+
+    '<div class="section"><h3>Cited by</h3>'+caseList(inA[i],7)+'</div>';
+}
+function shortestPath(a,b){
+  if(a<0||b<0)return[];
+  if(a===b)return[a];
+  const prev=new Int32Array(N);prev.fill(-2);prev[a]=-1;
+  const q=[a];let head=0;
+  while(head<q.length){
+    const u=q[head++], ns=outA[u].concat(inA[u]);
+    for(const v of ns){if(prev[v]!==-2)continue;prev[v]=u;if(v===b){head=q.length;break;}q.push(v);}
+  }
+  if(prev[b]===-2)return[];
+  const p=[];for(let x=b;x!==-1;x=prev[x])p.push(x);return p.reverse();
+}
+function updatePath(){
+  pathNodes=shortestPath(pathStart,pathEnd);
+  pathPairs=[];pathNodeSet=pathNodes.length?new Set(pathNodes):null;pathEdgeSet=new Set();
+  for(let i=1;i<pathNodes.length;i++){pathPairs.push([pathNodes[i-1],pathNodes[i]]);pathEdgeSet.add(edgeKey(pathNodes[i-1],pathNodes[i]));}
+  if(typeof updateStats==='function')updateStats();
+  needs=true;
+}
+function setPathPoint(which,i){if(which==='start')pathStart=i;else pathEnd=i;updatePath();renderPanel(i);}
+function selectCase(i,zoom){
+  sel=i; if(!(D.NAME&&D.NAME[i])) fetchName(i);
+  if(zoom){const sc=Math.max(scale,6);scale=sc;tx=W/2-PX[i]*sc;ty=H/2-PY[i]*sc;}
+  renderPanel(i);needs=true;
+}
+function focusCase(i){selectCase(i,true);}
+function localSearch(v){
+  let i=D.IDS.indexOf(v);
+  if(i<0){const lv=v.toLowerCase(); for(let j=0;j<N;j++){const nm=(D.NAME&&D.NAME[j])||nameCache[D.IDS[j]]||'';if(nm&&nm.toLowerCase().includes(lv)){i=j;break;}}}
+  return i;
+}
+function idFromSearchResult(res){
+  const raw=String(res.absolute_url||res.resource_uri||res.cluster_url||'');
+  const m=raw.match(/\/opinion\/(\d+)\//);
+  return m?m[1]:'';
+}
+async function remoteSearch(v){
+  const url='https://www.courtlistener.com/api/rest/v4/search/?type=o&court=scotus&q='+encodeURIComponent(v);
+  const j=await fetch(url,{headers:{'Accept':'application/json'}}).then(async r=>{const j=await r.json().catch(()=>null);if(!r.ok){handleLookupFailure('',j);return null;}return j;});
+  const results=(j&&j.results)||[];
+  for(const res of results){
+    const id=idFromSearchResult(res), i=D.IDS.indexOf(id);
+    if(i>=0){
+      nameCache[id]=res.caseName||res.case_name||'';
+      const c=(res.citation||[]).find(x=>/U\.S\./.test(x)); citeCache[id]=c||'';
+      urlCache[id]=absoluteCourtListenerUrl(res.absolute_url||'');
+      saveNameCache();
+      return i;
+    }
+  }
+  return -1;
+}
+// ---- interaction ----
+cv.addEventListener('mousedown',e=>{dragging=true;didDrag=false;downX=lastX=e.clientX;downY=lastY=e.clientY;cv.classList.add('drag');});
+window.addEventListener('mouseup',e=>{
+  if(dragging){dragging=false;cv.classList.remove('drag');needs=true;
+    if(!didDrag){ const i=pick(e.clientX,e.clientY); if(i>=0){ selectCase(i,false); } else { sel=-1; renderPanel(-1); } needs=true; }
+  }
+});
+window.addEventListener('mousemove',e=>{
+  if(dragging){const dx=e.clientX-lastX,dy=e.clientY-lastY;if(Math.abs(e.clientX-downX)+Math.abs(e.clientY-downY)>4)didDrag=true;tx+=dx;ty+=dy;lastX=e.clientX;lastY=e.clientY;needs=true;return;}
+  lastMouse.x=e.clientX; lastMouse.y=e.clientY;
+  const i=pick(e.clientX,e.clientY); if(i!==hover){hover=i;needs=true; if(i>=0&&!(D.NAME&&D.NAME[i])) scheduleNameFetch(i);}
+  renderTip(i,e.clientX,e.clientY);
+});
+window.addEventListener('wheel',e=>{e.preventDefault();let dy=e.deltaY;if(e.deltaMode===1)dy*=16;else if(e.deltaMode===2)dy*=(H||window.innerHeight);const f=Math.exp(-dy*0.0015);zoomAt(e.clientX,e.clientY,f);},{passive:false});
+cv.addEventListener('touchstart',e=>{if(e.touches.length!==1)return;e.preventDefault();const t=e.touches[0];dragging=true;didDrag=false;downX=lastX=t.clientX;downY=lastY=t.clientY;cv.classList.add('drag');},{passive:false});
+cv.addEventListener('touchmove',e=>{if(!dragging||e.touches.length!==1)return;e.preventDefault();const t=e.touches[0],dx=t.clientX-lastX,dy=t.clientY-lastY;if(Math.abs(t.clientX-downX)+Math.abs(t.clientY-downY)>4)didDrag=true;tx+=dx;ty+=dy;lastX=t.clientX;lastY=t.clientY;needs=true;},{passive:false});
+cv.addEventListener('touchend',e=>{if(!dragging)return;e.preventDefault();dragging=false;cv.classList.remove('drag');if(!didDrag){const i=pick(lastX,lastY);if(i>=0){hover=i;selectCase(i,false);renderTip(i,lastX,lastY);}else{sel=hover=-1;renderTip(-1,lastX,lastY);renderPanel(-1);}}needs=true;},{passive:false});
+panelEl.addEventListener('click',e=>{
+  const btn=e.target.closest('button');if(!btn)return;
+  const ci=btn.dataset.case; if(ci!==undefined){focusCase(Number(ci));return;}
+  const act=btn.dataset.act;if(!act)return;
+  if(act==='close'){renderPanel(-1);return;}
+  if(sel<0)return;
+  if(act==='start'||act==='end'){setPathPoint(act,sel);return;}
+  if(act==='clearPath'){pathStart=pathEnd=-1;updatePath();renderPanel(sel);}
+});
+document.getElementById('bLayout').onclick=function(){
+  const next = layout==='web'?'cluster':layout==='cluster'?'area':'web';
+  layout = next;
+  document.body.classList.toggle('area-layout',next==='area');
+  this.textContent='Layout: '+(next==='cluster'?'Doctrinal clusters':next==='area'?'Area groups':'Citation web');
+  const sx=new Float32Array(N), sy=new Float32Array(N), txx=new Float32Array(N), tyy=new Float32Array(N);
+  for(let i=0;i<N;i++){sx[i]=PX[i];sy[i]=PY[i];txx[i]=next==='cluster'?D.CX[i]:next==='area'?AX[i]:D.WX[i];tyy[i]=next==='cluster'?D.CY[i]:next==='area'?AY[i]:D.WY[i];}
+  const t0=performance.now(),dur=750;
+  (function anim(t){let k=Math.min(1,(t-t0)/dur);const e=k<.5?2*k*k:1-Math.pow(-2*k+2,2)/2;for(let i=0;i<N;i++){PX[i]=sx[i]+(txx[i]-sx[i])*e;PY[i]=sy[i]+(tyy[i]-sy[i])*e;}needs=true;if(k<1)requestAnimationFrame(anim);else{buildGrid();if(next==='area')fit();}})(t0);
+};
+document.getElementById('bEdges').onclick=function(){showEdges=!showEdges;this.textContent='Show all edges: '+(showEdges?'on':'off');this.classList.toggle('on',showEdges);this.setAttribute('aria-pressed',showEdges?'true':'false');needs=true;};
+document.getElementById('bLandmarks').onclick=function(){showLandmarks=!showLandmarks;this.textContent='Landmarks: '+(showLandmarks?'on':'off');this.classList.toggle('on',showLandmarks);this.setAttribute('aria-pressed',showLandmarks?'true':'false');needs=true;};
+document.getElementById('bCompare').onclick=function(){compareMode=!compareMode;compareAreas=[];this.textContent='Compare: '+(compareMode?'0/2':'off');this.classList.toggle('on',compareMode);this.setAttribute('aria-pressed',compareMode?'true':'false');updateLegendCompare();updateStats();needs=true;};
+document.getElementById('bFit').onclick=()=>{sel=-1;fit();};
+document.getElementById('bZin').onclick=()=>zoomAt(W/2,H/2,1.45);
+document.getElementById('bZout').onclick=()=>zoomAt(W/2,H/2,1/1.45);
+document.getElementById('bClear').onclick=()=>{sel=hover=-1;pathStart=pathEnd=-1;pathNodes=[];pathPairs=[];pathNodeSet=null;pathEdgeSet=null;compareAreas=[];renderTip(-1,0,0);renderPanel(-1);updateLegendCompare();updateStats();needs=true;};
+qEl.addEventListener('keydown',async e=>{
+  if(e.key!=='Enter')return; const v=e.target.value.trim(); if(!v)return; let i=localSearch(v);
+  if(i<0 && v.length>2){qEl.classList.add('loading');try{i=await remoteSearch(v);}catch(err){i=-1;}qEl.classList.remove('loading');}
+  if(i<0){e.target.style.borderColor='#a33';return;} e.target.style.borderColor='';
+  focusCase(i);
+});
+// ---- legend + select all/none ----
+const li=document.getElementById('legitems');
+const legendEls=[];
+D.IANAMES.forEach((nm,idx)=>{const d=document.createElement('div');d.className='li';d.innerHTML='<span class="sw" style="background:'+COL[idx]+'"></span><span>'+nm+'</span>';
+  d.onclick=()=>{if(compareMode){toggleCompareArea(idx);return;}if(active.has(idx)){active.delete(idx);d.classList.add('off');}else{active.add(idx);d.classList.remove('off');}needs=true;};legendEls[idx]=d;li.appendChild(d);});
+function compareEdgeCount(){if(compareAreas.length!==2)return 0;const[a,b]=compareAreas;let n=0;for(let k=0;k<E;k++){const u=D.EU[k],v=D.EV[k];if((D.IA[u]===a&&D.IA[v]===b)||(D.IA[u]===b&&D.IA[v]===a))n++;}return n;}
+function updateLegendCompare(){legendEls.forEach((el,idx)=>{el.classList.toggle('cmpA',compareAreas[0]===idx);el.classList.toggle('cmpB',compareAreas[1]===idx);});const b=document.getElementById('bCompare');if(compareMode)b.textContent='Compare: '+compareAreas.length+'/2';else b.textContent='Compare areas: off';}
+function toggleCompareArea(idx){const at=compareAreas.indexOf(idx);if(at>=0)compareAreas.splice(at,1);else{if(compareAreas.length>=2)compareAreas.shift();compareAreas.push(idx);}updateLegendCompare();updateStats();needs=true;}
+function setAllAreas(on){D.IANAMES.forEach((_,idx)=>{if(on)active.add(idx);else active.delete(idx);});document.querySelectorAll('#legitems .li').forEach(el=>el.classList.toggle('off',!on));needs=true;}
+document.getElementById('selAll').onclick=()=>{compareAreas=[];updateLegendCompare();setAllAreas(true);updateStats();};
+document.getElementById('selNone').onclick=()=>{compareAreas=[];updateLegendCompare();setAllAreas(false);updateStats();};
+document.getElementById('subline').textContent=N.toLocaleString()+' opinions · '+E.toLocaleString()+' citations';
+function updateStats(){
+  const base='<b>'+N.toLocaleString()+'</b> cases · <b>'+E.toLocaleString()+'</b> citations<br>node size = times cited · names load live from CourtListener<br>filtered to the core: 2000+ · 1975–99 cited ≥5 · pre-1975 cited ≥50';
+  const cmp=compareMode?'<br><b>Compare:</b> '+(compareAreas.length?compareAreas.map(i=>D.IANAMES[i]).join(' + '):'choose areas')+(compareAreas.length===2?' · '+compareEdgeCount().toLocaleString()+' cross-citations':''):'';
+  const p=pathNodes.length?'<br><b>Path:</b> '+pathNodes.length+' cases from '+esc(shortTitle(pathStart))+' to '+esc(shortTitle(pathEnd)):'';
+  document.getElementById('stats').innerHTML=base+cmp+p;
+}
+updateStats();
+window.addEventListener('resize',()=>{DPR=Math.min(2,window.devicePixelRatio||1);resize();});
+buildAreaLayout();loadStaticNames();resize();buildGrid();fit();loop();
+</script></body></html>
