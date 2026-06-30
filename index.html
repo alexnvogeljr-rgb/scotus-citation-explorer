@@ -56,7 +56,7 @@ canvas.drag{cursor:grabbing}
 .casebtn{display:block;width:100%;margin:4px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pathstat{font-size:11px;color:var(--mut);margin-top:5px}
 .note{position:absolute;top:calc(var(--bar-h) + 10px);left:50%;transform:translateX(-50%);background:#1a2336;border:1px solid #2b3a5c;color:#cdd8ee;padding:6px 12px;border-radius:20px;font-size:11.5px;z-index:6;white-space:nowrap}
-.area-layout .note,.area-layout #stats{display:none}
+.area-layout .note,.cluster-layout .note,.area-layout #stats{display:none}
 kbd{background:#222637;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;font-size:11px}
 @media (max-width:900px){
   .note,#stats{display:none}
@@ -130,7 +130,20 @@ const PX=new Float32Array(N), PY=new Float32Array(N);
 for(let i=0;i<N;i++){PX[i]=D.WX[i];PY[i]=D.WY[i];}
 let layout='web';
 const AX=new Float32Array(N), AY=new Float32Array(N), AREA_LABELS=[];
-const TCX=new Float32Array(N), TCY=new Float32Array(N), CLUSTER_LANDMARKS=[];
+const TCX=new Float32Array(N), TCY=new Float32Array(N), CLUSTER_LANDMARKS=[], CLUSTER_GROUPS=[];
+const CLUSTER_NAMES={
+  0:'Speech & Association',
+  1:'Criminal Trials & Habeas',
+  2:'Standing & Judicial Review',
+  3:'Administrative State & Statutes',
+  4:'Equal Protection & Due Process',
+  5:'Jurisdiction & Double Jeopardy',
+  6:'Commerce & Federal Power',
+  7:'Searches & Seizures',
+  8:'Tribal Sovereignty & Public Lands',
+  9:'Antitrust, Preemption & Markets',
+  10:'Federal Courts & Civil Rights Remedies'
+};
 function clamp(v,lo,hi){return Math.max(lo,Math.min(hi,v));}
 function buildAreaLayout(){
   const groups=Array.from({length:D.IANAMES.length},()=>[]);
@@ -153,7 +166,7 @@ function buildAreaLayout(){
   }
 }
 function buildClusterLayout(){
-  CLUSTER_LANDMARKS.length=0;
+  CLUSTER_LANDMARKS.length=0;CLUSTER_GROUPS.length=0;
   const seen=new Set(), groups=new Map(), comm=D.COM||[];
   for(let i=0;i<N;i++){
     TCX[i]=D.CX[i];TCY[i]=D.CY[i];
@@ -163,6 +176,9 @@ function buildClusterLayout(){
     g.push(i);
   }
   for(const [c,g] of groups){
+    const ac=new Map();for(const i of g)ac.set(D.IA[i],(ac.get(D.IA[i])||0)+1);
+    const dom=Array.from(ac).sort((a,b)=>b[1]-a[1])[0]?.[0]??0;
+    CLUSTER_GROUPS.push({id:c,name:CLUSTER_NAMES[c]||('Cluster '+(Number(c)+1)),idx:g,ia:dom});
     const top=g.slice().sort((a,b)=>(D.DEG[b]||0)-(D.DEG[a]||0)).slice(0,5);
     for(const i of top){if(!seen.has(i)){seen.add(i);CLUSTER_LANDMARKS.push(i);}}
     if(top.length<2)continue;
@@ -177,6 +193,7 @@ function buildClusterLayout(){
       TCY[i]=cy+Math.sin(a)*ring;
     }
   }
+  CLUSTER_GROUPS.sort((a,b)=>a.id-b.id);
   CLUSTER_LANDMARKS.sort((a,b)=>(D.DEG[b]||0)-(D.DEG[a]||0));
 }
 const outA=Array.from({length:N},()=>[]), inA=Array.from({length:N},()=>[]);
@@ -289,8 +306,53 @@ function drawLandmarkLabels(){
   }
   ctx.restore();
 }
+function clusterLabelLines(label){
+  const words=label.split(' '), lines=[''];
+  for(const w of words){
+    const last=lines.length-1, test=(lines[last]+' '+w).trim();
+    if(test.length>22&&lines[last])lines.push(w);else lines[last]=test;
+  }
+  return lines.slice(0,2);
+}
+function roundedRectPath(x,y,w,h,r){
+  ctx.beginPath();
+  if(ctx.roundRect){ctx.roundRect(x,y,w,h,r);return;}
+  ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);
+}
+function drawClusterBoundaries(labelsOnly){
+  if(layout!=='cluster')return;
+  ctx.save();
+  for(const cg of CLUSTER_GROUPS){
+    const pts=cg.idx.filter(isNodeEligible);
+    if(!pts.length)continue;
+    let cx=0,cy=0;for(const i of pts){cx+=PX[i];cy+=PY[i];}cx/=pts.length;cy/=pts.length;
+    let rr=0;for(const i of pts){rr=Math.max(rr,Math.hypot(PX[i]-cx,PY[i]-cy)+Math.max(12/scale,rad(i)/scale));}
+    rr=Math.max(rr+18/scale,34/scale);
+    const p=world2screen(cx,cy), sr=rr*scale;
+    if(p[0]+sr<-80||p[0]-sr>W+80||p[1]+sr<-80||p[1]-sr>H+80)continue;
+    const color=COL[cg.ia]||'#9aa0a6';
+    if(!labelsOnly){
+      ctx.beginPath();ctx.arc(p[0],p[1],sr,0,6.2832);
+      ctx.strokeStyle=color+'88';ctx.lineWidth=1.3;ctx.setLineDash([7,5]);ctx.stroke();ctx.setLineDash([]);
+      ctx.beginPath();ctx.arc(p[0],p[1],sr+3,0,6.2832);
+      ctx.strokeStyle='rgba(255,255,255,0.08)';ctx.lineWidth=0.8;ctx.stroke();
+      continue;
+    }
+    const lines=clusterLabelLines(cg.name), font=Math.max(10,Math.min(13,11.5*zoomLabelFactor()));
+    ctx.font='700 '+font+'px -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif';
+    ctx.textAlign='center';ctx.textBaseline='middle';
+    const lh=font*1.05, tw=Math.max(...lines.map(s=>ctx.measureText(s).width)), bx=p[0], by=clamp(p[1]-sr-14-lines.length*lh/2,(barEl.offsetHeight||58)+18,H-18);
+    const padX=8,padY=5,bw=tw+padX*2,bh=lines.length*lh+padY*2;
+    ctx.fillStyle='rgba(13,16,25,0.88)';ctx.strokeStyle=color;ctx.lineWidth=1;
+    roundedRectPath(bx-bw/2,by-bh/2,bw,bh,7);ctx.fill();ctx.stroke();
+    ctx.fillStyle='rgba(245,248,255,0.94)';
+    lines.forEach((line,n)=>ctx.fillText(line,bx,by-(lines.length-1)*lh/2+n*lh));
+  }
+  ctx.restore();
+}
 function draw(){
   ctx.clearRect(0,0,W,H);
+  drawClusterBoundaries(false);
   if(compareMode&&compareAreas.length===2&&!dragging){
     const [a0,a1]=compareAreas;ctx.strokeStyle='rgba(125,162,255,0.18)';ctx.lineWidth=0.7;ctx.beginPath();
     for(let k=0;k<E;k++){const u=D.EU[k],v=D.EV[k];if(!isNodeEligible(u)||!isNodeEligible(v))continue;const cross=(D.IA[u]===a0&&D.IA[v]===a1)||(D.IA[u]===a1&&D.IA[v]===a0);if(!cross)continue;const a=world2screen(PX[u],PY[u]),b=world2screen(PX[v],PY[v]);ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);}
@@ -327,6 +389,7 @@ function draw(){
   }
   ctx.globalAlpha=1;
   drawLandmarkLabels();
+  drawClusterBoundaries(true);
   if(layout==='area'){
     ctx.save();ctx.font='600 11px -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif';ctx.textAlign='center';ctx.textBaseline='bottom';ctx.lineWidth=3;ctx.strokeStyle='rgba(7,7,13,0.92)';
     for(let ia=0;ia<AREA_LABELS.length;ia++){if(!active.has(ia))continue;const a=AREA_LABELS[ia],p=world2screen(a.x,a.y-a.r-10/scale);if(p[0]<-120||p[0]>W+120||p[1]<-30||p[1]>H+30)continue;ctx.strokeText(D.IANAMES[ia],p[0],p[1]);ctx.fillStyle='rgba(231,236,245,0.82)';ctx.fillText(D.IANAMES[ia],p[0],p[1]);}
@@ -507,6 +570,7 @@ document.getElementById('bLayout').onclick=function(){
   const next = layout==='web'?'cluster':layout==='cluster'?'area':'web';
   layout = next;
   document.body.classList.toggle('area-layout',next==='area');
+  document.body.classList.toggle('cluster-layout',next==='cluster');
   this.textContent='Layout: '+(next==='cluster'?'Doctrinal clusters':next==='area'?'Area groups':'Citation web');
   const sx=new Float32Array(N), sy=new Float32Array(N), txx=new Float32Array(N), tyy=new Float32Array(N);
   for(let i=0;i<N;i++){sx[i]=PX[i];sy[i]=PY[i];txx[i]=next==='cluster'?TCX[i]:next==='area'?AX[i]:D.WX[i];tyy[i]=next==='cluster'?TCY[i]:next==='area'?AY[i]:D.WY[i];}
