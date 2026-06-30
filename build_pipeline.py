@@ -223,6 +223,7 @@ if os.path.exists(tpl_path):
     d = dict(IDS=ids, NAME=[name[i] for i in ids],
              WX=[round(web[i][0],1) for i in ids], WY=[round(web[i][1],1) for i in ids],
              CX=[round(clu[i][0],1) for i in ids], CY=[round(clu[i][1],1) for i in ids],
+             COM=[gcomm.get(i, -1) for i in ids],
              IA=[iaidx.get(iarea[i],14) for i in ids],
              YR=[int(year[i]) if str(year[i]).strip().isdigit() else 0 for i in ids],
              DEG=[SZ[k] for k in range(len(ids))],

@@ -121,6 +121,7 @@ const PX=new Float32Array(N), PY=new Float32Array(N);
 for(let i=0;i<N;i++){PX[i]=D.WX[i];PY[i]=D.WY[i];}
 let layout='web';
 const AX=new Float32Array(N), AY=new Float32Array(N), AREA_LABELS=[];
+const TCX=new Float32Array(N), TCY=new Float32Array(N), CLUSTER_LANDMARKS=[];
 function clamp(v,lo,hi){return Math.max(lo,Math.min(hi,v));}
 function buildAreaLayout(){
   const groups=Array.from({length:D.IANAMES.length},()=>[]);
@@ -141,6 +142,33 @@ function buildAreaLayout(){
     }
     AREA_LABELS[ia]={x:cx,y:cy,r:target,n:g.length};
   }
+}
+function buildClusterLayout(){
+  CLUSTER_LANDMARKS.length=0;
+  const seen=new Set(), groups=new Map(), comm=D.COM||[];
+  for(let i=0;i<N;i++){
+    TCX[i]=D.CX[i];TCY[i]=D.CY[i];
+    const c=comm[i]!==undefined&&comm[i]!==null&&comm[i]!==''?Number(comm[i]):D.IA[i];
+    if(!Number.isFinite(c)||c<0)continue;
+    let g=groups.get(c);if(!g){g=[];groups.set(c,g);}
+    g.push(i);
+  }
+  for(const [c,g] of groups){
+    const top=g.slice().sort((a,b)=>(D.DEG[b]||0)-(D.DEG[a]||0)).slice(0,5);
+    for(const i of top){if(!seen.has(i)){seen.add(i);CLUSTER_LANDMARKS.push(i);}}
+    if(top.length<2)continue;
+    let cx=0,cy=0;
+    for(const i of top){cx+=D.CX[i];cy+=D.CY[i];}
+    cx/=top.length;cy/=top.length;
+    const ring=Math.max(32,Math.min(78,Math.sqrt(g.length)*4.2));
+    const rot=((Number(c)||0)%11)*0.31-Math.PI/2;
+    for(let n=0;n<top.length;n++){
+      const i=top[n], a=rot+n*2*Math.PI/top.length;
+      TCX[i]=cx+Math.cos(a)*ring;
+      TCY[i]=cy+Math.sin(a)*ring;
+    }
+  }
+  CLUSTER_LANDMARKS.sort((a,b)=>(D.DEG[b]||0)-(D.DEG[a]||0));
 }
 const outA=Array.from({length:N},()=>[]), inA=Array.from({length:N},()=>[]);
 for(let k=0;k<E;k++){outA[D.EU[k]].push(D.EV[k]);inA[D.EV[k]].push(D.EU[k]);}
@@ -211,12 +239,13 @@ function zoomLabelFactor(){
 }
 function drawLandmarkLabels(){
   if(!showLandmarks||dragging)return;
+  const landmarks=layout==='cluster'?CLUSTER_LANDMARKS:LANDMARKS;
   ctx.save();ctx.textAlign='center';ctx.textBaseline='middle';
-  for(const i of LANDMARKS){
+  for(const i of landmarks){
     if(!isNodeEligible(i))continue;
     if(pathNodeSet&&pathNodes.length&&!pathNodeSet.has(i))continue;
     const p=world2screen(PX[i],PY[i]); if(p[0]<-40||p[0]>W+40||p[1]<-40||p[1]>H+40)continue;
-    const r=rad(i); if(r<9)continue;
+    const r=rad(i); if(r<(layout==='cluster'?5.5:9))continue;
     const lines=labelParts(cleanCaseTitle(i)).slice(0,2).map(s=>s.replace(/\s+/g,' ').trim()).filter(Boolean);
     const shrink=zoomLabelFactor();
     let font=Math.min(10.5,Math.max(5.4,r*0.44))*shrink;
@@ -449,7 +478,7 @@ document.getElementById('bLayout').onclick=function(){
   document.body.classList.toggle('area-layout',next==='area');
   this.textContent='Layout: '+(next==='cluster'?'Doctrinal clusters':next==='area'?'Area groups':'Citation web');
   const sx=new Float32Array(N), sy=new Float32Array(N), txx=new Float32Array(N), tyy=new Float32Array(N);
-  for(let i=0;i<N;i++){sx[i]=PX[i];sy[i]=PY[i];txx[i]=next==='cluster'?D.CX[i]:next==='area'?AX[i]:D.WX[i];tyy[i]=next==='cluster'?D.CY[i]:next==='area'?AY[i]:D.WY[i];}
+  for(let i=0;i<N;i++){sx[i]=PX[i];sy[i]=PY[i];txx[i]=next==='cluster'?TCX[i]:next==='area'?AX[i]:D.WX[i];tyy[i]=next==='cluster'?TCY[i]:next==='area'?AY[i]:D.WY[i];}
   const t0=performance.now(),dur=750;
   (function anim(t){let k=Math.min(1,(t-t0)/dur);const e=k<.5?2*k*k:1-Math.pow(-2*k+2,2)/2;for(let i=0;i<N;i++){PX[i]=sx[i]+(txx[i]-sx[i])*e;PY[i]=sy[i]+(tyy[i]-sy[i])*e;}needs=true;if(k<1)requestAnimationFrame(anim);else{buildGrid();if(next==='area')fit();}})(t0);
 };
@@ -486,5 +515,5 @@ function updateStats(){
 }
 updateStats();
 window.addEventListener('resize',()=>{DPR=Math.min(2,window.devicePixelRatio||1);resize();});
-buildAreaLayout();loadStaticNames();resize();buildGrid();fit();loop();
+buildAreaLayout();buildClusterLayout();loadStaticNames();resize();buildGrid();fit();loop();
 </script></body></html>
