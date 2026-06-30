@@ -18,11 +18,12 @@ canvas.drag{cursor:grabbing}
 .tools{display:flex;gap:8px;align-items:center;flex:1;flex-wrap:wrap}
 .bar h1{font-size:14px;margin:0 2px 0 0;font-weight:700;letter-spacing:.2px;white-space:nowrap}
 .bar .sub{color:var(--mut);font-size:11px;white-space:nowrap}
-.bar input,.bar button{background:#171a26;border:1px solid var(--line);color:var(--ink);border-radius:7px;padding:6px 9px;font-size:12px;min-height:32px}
+.bar input,.bar button,.bar select{background:#171a26;border:1px solid var(--line);color:var(--ink);border-radius:7px;padding:6px 9px;font-size:12px;min-height:32px}
 .bar input{width:min(28vw,270px);min-width:190px}
+.bar select{cursor:pointer;white-space:nowrap;appearance:auto}
 .bar input.loading{border-color:#7da2ff}
 .bar button{cursor:pointer;white-space:nowrap} .bar button:hover{border-color:#3a4d7a}
-.bar button:focus-visible,.bar input:focus-visible{outline:2px solid #7da2ff;outline-offset:2px}
+.bar button:focus-visible,.bar input:focus-visible,.bar select:focus-visible{outline:2px solid #7da2ff;outline-offset:2px}
 .bar button.on{background:#24314e;border-color:#3f5d8f}
 .spacer{flex:1}
 #legend{position:absolute;left:12px;bottom:12px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 11px;z-index:5;max-width:230px}
@@ -75,10 +76,11 @@ kbd{background:#222637;border:1px solid var(--line);border-bottom-width:2px;bord
   #bEdges{grid-column:3/5;grid-row:2}
   #bLandmarks{grid-column:1/3;grid-row:3}
   #bCompare{grid-column:3/5;grid-row:3}
-  #bFit{grid-column:1;grid-row:4}
-  #bClear{grid-column:2;grid-row:4}
-  #bZin{grid-column:3;grid-row:4}
-  #bZout{grid-column:4;grid-row:4}
+  #caseLimit{grid-column:1/3;grid-row:4}
+  #bFit{grid-column:3;grid-row:4}
+  #bClear{grid-column:4;grid-row:4}
+  #bZin{grid-column:1;grid-row:5}
+  #bZout{grid-column:2;grid-row:5}
   .spacer{display:none}
   #panel{left:8px;right:8px;top:calc(var(--bar-h) + 8px);width:auto;max-height:42vh}
 }
@@ -98,6 +100,13 @@ kbd{background:#222637;border:1px solid var(--line);border-bottom-width:2px;bord
   <button id="bLayout" type="button">Layout: Citation web</button>
   <button id="bEdges" type="button" aria-pressed="false">Show all edges: off</button>
   <button id="bLandmarks" type="button" class="on" aria-pressed="true">Landmarks: on</button>
+  <select id="caseLimit" aria-label="Shown cases">
+    <option value="0">Cases: all</option>
+    <option value="1000">Top 1,000</option>
+    <option value="500">Top 500</option>
+    <option value="100">Top 100</option>
+    <option value="50">Top 50</option>
+  </select>
   <button id="bCompare" type="button" aria-pressed="false">Compare areas: off</button>
   <button id="bZin" type="button" title="Zoom in" aria-label="Zoom in">+</button>
   <button id="bZout" type="button" title="Zoom out" aria-label="Zoom out">&#8722;</button>
@@ -179,11 +188,28 @@ function zoomAt(mx,my,factor){const[wx,wy]=screen2world(mx,my);scale=Math.max(0.
 function rad(i){return 0.7+Math.pow(D.DEG[i]||0,0.72)*0.52;}
 const active=new Set(D.IANAMES.map((_,i)=>i));
 const LANDMARKS=Array.from({length:N},(_,i)=>i).sort((a,b)=>(D.DEG[b]||0)-(D.DEG[a]||0)).slice(0,50);
+const TOP_ORDER=Array.from({length:N},(_,i)=>i).sort((a,b)=>(D.DEG[b]||0)-(D.DEG[a]||0));
+const RANK=new Int32Array(N);TOP_ORDER.forEach((i,r)=>{RANK[i]=r+1;});
+let caseLimit=0;
 let hover=-1, sel=-1, showEdges=false, showLandmarks=true, compareMode=false, dragging=false, didDrag=false, lastX=0,lastY=0, downX=0,downY=0;
 let compareAreas=[], pathStart=-1, pathEnd=-1, pathNodes=[], pathPairs=[], pathNodeSet=null, pathEdgeSet=null;
 let needs=true;
 function edgeKey(a,b){return a<b?a+'-'+b:b+'-'+a;}
-function isNodeEligible(i){const ia=D.IA[i];return active.has(ia)&&(!compareMode||compareAreas.length===0||compareAreas.includes(ia));}
+function passesCaseLimit(i){return !caseLimit||RANK[i]<=caseLimit;}
+function isNodeEligible(i){const ia=D.IA[i];return passesCaseLimit(i)&&active.has(ia)&&(!compareMode||compareAreas.length===0||compareAreas.includes(ia));}
+function shownCaseCount(){let n=0;for(let i=0;i<N;i++)if(isNodeEligible(i))n++;return n;}
+function shownEdgeCount(){let n=0;for(let k=0;k<E;k++)if(isNodeEligible(D.EU[k])&&isNodeEligible(D.EV[k]))n++;return n;}
+function shownNeighbors(arr){return arr.filter(isNodeEligible);}
+function refreshVisibility(refit){
+  if(hover>=0&&!isNodeEligible(hover)){hover=-1;renderTip(-1,0,0);}
+  if(sel>=0&&!isNodeEligible(sel)){sel=-1;renderPanel(-1);}
+  if(pathStart>=0&&!isNodeEligible(pathStart))pathStart=-1;
+  if(pathEnd>=0&&!isNodeEligible(pathEnd))pathEnd=-1;
+  updatePath();
+  if(sel>=0)renderPanel(sel);
+  updateStats();
+  if(refit)fit(); else needs=true;
+}
 let grid=null, GCELL=7, GW=0, GMINX=0, GMINY=0;
 function buildGrid(){
   let minx=1e9,miny=1e9,maxx=-1e9,maxy=-1e9;
@@ -204,7 +230,10 @@ function pick(sx,sy){
 }
 function fit(){
   let minx=1e9,miny=1e9,maxx=-1e9,maxy=-1e9;
-  for(let i=0;i<N;i++){if(layout!=='area'&&PY[i]>1010)continue;if(PX[i]<minx)minx=PX[i];if(PY[i]<miny)miny=PY[i];if(PX[i]>maxx)maxx=PX[i];if(PY[i]>maxy)maxy=PY[i];}
+  let found=0;
+  for(let i=0;i<N;i++){if(!isNodeEligible(i))continue;if(layout!=='area'&&PY[i]>1010)continue;if(PX[i]<minx)minx=PX[i];if(PY[i]<miny)miny=PY[i];if(PX[i]>maxx)maxx=PX[i];if(PY[i]>maxy)maxy=PY[i];found++;}
+  if(!found){for(let i=0;i<N;i++){if(!passesCaseLimit(i))continue;if(layout!=='area'&&PY[i]>1010)continue;if(PX[i]<minx)minx=PX[i];if(PY[i]<miny)miny=PY[i];if(PX[i]>maxx)maxx=PX[i];if(PY[i]>maxy)maxy=PY[i];found++;}}
+  if(!found)return;
   const pad=60, topPad=layout==='area'?(barEl.offsetHeight||58)+36:pad, bottomPad=60;
   const sx=(W-pad*2)/(maxx-minx), sy=(H-topPad-bottomPad)/(maxy-miny); scale=Math.min(sx,sy);
   fittedScale=scale;
@@ -264,7 +293,7 @@ function draw(){
   ctx.clearRect(0,0,W,H);
   if(compareMode&&compareAreas.length===2&&!dragging){
     const [a0,a1]=compareAreas;ctx.strokeStyle='rgba(125,162,255,0.18)';ctx.lineWidth=0.7;ctx.beginPath();
-    for(let k=0;k<E;k++){const u=D.EU[k],v=D.EV[k];if(!active.has(D.IA[u])||!active.has(D.IA[v]))continue;const cross=(D.IA[u]===a0&&D.IA[v]===a1)||(D.IA[u]===a1&&D.IA[v]===a0);if(!cross)continue;const a=world2screen(PX[u],PY[u]),b=world2screen(PX[v],PY[v]);ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);}
+    for(let k=0;k<E;k++){const u=D.EU[k],v=D.EV[k];if(!isNodeEligible(u)||!isNodeEligible(v))continue;const cross=(D.IA[u]===a0&&D.IA[v]===a1)||(D.IA[u]===a1&&D.IA[v]===a0);if(!cross)continue;const a=world2screen(PX[u],PY[u]),b=world2screen(PX[v],PY[v]);ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);}
     ctx.stroke();
   } else if(showEdges && !dragging){
     ctx.strokeStyle='rgba(110,150,255,0.05)';ctx.lineWidth=0.4;ctx.beginPath();
@@ -378,17 +407,17 @@ function renderTip(i,x,y){
   if(i<0){ tipEl.style.display='none'; return; }
   const tw=Math.min(300,W-24); tipEl.style.maxWidth=tw+'px';
   tipEl.style.display='block'; tipEl.style.left=Math.max(12,Math.min(W-tw-12,x+14))+'px'; tipEl.style.top=Math.max(12,Math.min(H-110,y+14))+'px';
-  tipEl.innerHTML='<div class="t">'+esc(titleFor(i))+'</div><div class="m">'+(D.YR[i]||'&#8212;')+' &#183; '+esc(D.IANAMES[D.IA[i]])+'<br>Cited by '+D.DEG[i]+' later opinions &#183; cites '+outA[i].length+' shown</div><div class="go">click for case details &#8594;</div>';
+  tipEl.innerHTML='<div class="t">'+esc(titleFor(i))+'</div><div class="m">'+(D.YR[i]||'&#8212;')+' &#183; '+esc(D.IANAMES[D.IA[i]])+'<br>Cited by '+D.DEG[i]+' later opinions &#183; cites '+shownNeighbors(outA[i]).length+' shown</div><div class="go">click for case details &#8594;</div>';
 }
 function caseButton(i){return '<button class="casebtn" data-case="'+i+'">'+esc(shortTitle(i))+' <span class="meta">'+(D.YR[i]||'')+'</span></button>';}
-function caseList(arr,max){return arr.slice().sort((a,b)=>(D.DEG[b]||0)-(D.DEG[a]||0)).slice(0,max).map(caseButton).join('')||'<div class="meta">None in this filtered graph</div>';}
+function caseList(arr,max){return shownNeighbors(arr).sort((a,b)=>(D.DEG[b]||0)-(D.DEG[a]||0)).slice(0,max).map(caseButton).join('')||'<div class="meta">None in this filtered graph</div>';}
 function pathLabel(){if(pathStart<0&&pathEnd<0)return 'No path endpoints set';return 'Start: '+(pathStart>=0?shortTitle(pathStart):'none')+'<br>End: '+(pathEnd>=0?shortTitle(pathEnd):'none')+(pathNodes.length?'<br>'+pathNodes.length+' cases in shortest connection':'');}
 function renderPanel(i){
   if(i<0){panelEl.classList.add('hidden');return;}
   const id=D.IDS[i], title=titleFor(i);
   panelEl.classList.remove('hidden');
   panelEl.innerHTML='<div class="ph"><h2>'+esc(title)+'</h2><button class="x" data-act="close">×</button></div>'+
-    '<div class="meta">'+(D.YR[i]||'Unknown year')+' &#183; '+esc(D.IANAMES[D.IA[i]])+'<br>Cited by '+D.DEG[i]+' later opinions &#183; cites '+outA[i].length+' shown<br>CourtListener #'+esc(id)+'</div>'+
+    '<div class="meta">'+(D.YR[i]||'Unknown year')+' &#183; '+esc(D.IANAMES[D.IA[i]])+'<br>Cited by '+D.DEG[i]+' later opinions &#183; cites '+shownNeighbors(outA[i]).length+' shown<br>CourtListener #'+esc(id)+'</div>'+
     '<div class="pbtns"><button data-act="start">Set path start</button><button data-act="end">Set path end</button><a href="'+esc(caseUrl(i))+'" target="_blank" rel="noopener">Open CourtListener</a><button data-act="clearPath">Clear path</button></div>'+
     '<div class="pathstat">'+pathLabel()+'</div>'+
     '<div class="section"><h3>Cites</h3>'+caseList(outA[i],7)+'</div>'+
@@ -396,12 +425,13 @@ function renderPanel(i){
 }
 function shortestPath(a,b){
   if(a<0||b<0)return[];
+  if(!isNodeEligible(a)||!isNodeEligible(b))return[];
   if(a===b)return[a];
   const prev=new Int32Array(N);prev.fill(-2);prev[a]=-1;
   const q=[a];let head=0;
   while(head<q.length){
     const u=q[head++], ns=outA[u].concat(inA[u]);
-    for(const v of ns){if(prev[v]!==-2)continue;prev[v]=u;if(v===b){head=q.length;break;}q.push(v);}
+    for(const v of ns){if(prev[v]!==-2||!isNodeEligible(v))continue;prev[v]=u;if(v===b){head=q.length;break;}q.push(v);}
   }
   if(prev[b]===-2)return[];
   const p=[];for(let x=b;x!==-1;x=prev[x])p.push(x);return p.reverse();
@@ -422,7 +452,8 @@ function selectCase(i,zoom){
 function focusCase(i){selectCase(i,true);}
 function localSearch(v){
   let i=D.IDS.indexOf(v);
-  if(i<0){const lv=v.toLowerCase(); for(let j=0;j<N;j++){const nm=(D.NAME&&D.NAME[j])||nameCache[D.IDS[j]]||'';if(nm&&nm.toLowerCase().includes(lv)){i=j;break;}}}
+  if(i>=0&&!isNodeEligible(i))i=-1;
+  if(i<0){const lv=v.toLowerCase(); for(let j=0;j<N;j++){if(!isNodeEligible(j))continue;const nm=(D.NAME&&D.NAME[j])||nameCache[D.IDS[j]]||'';if(nm&&nm.toLowerCase().includes(lv)){i=j;break;}}}
   return i;
 }
 function idFromSearchResult(res){
@@ -436,7 +467,7 @@ async function remoteSearch(v){
   const results=(j&&j.results)||[];
   for(const res of results){
     const id=idFromSearchResult(res), i=D.IDS.indexOf(id);
-    if(i>=0){
+    if(i>=0&&isNodeEligible(i)){
       nameCache[id]=res.caseName||res.case_name||'';
       const c=(res.citation||[]).find(x=>/U\.S\./.test(x)); citeCache[id]=c||'';
       urlCache[id]=absoluteCourtListenerUrl(res.absolute_url||'');
@@ -480,11 +511,12 @@ document.getElementById('bLayout').onclick=function(){
   const sx=new Float32Array(N), sy=new Float32Array(N), txx=new Float32Array(N), tyy=new Float32Array(N);
   for(let i=0;i<N;i++){sx[i]=PX[i];sy[i]=PY[i];txx[i]=next==='cluster'?TCX[i]:next==='area'?AX[i]:D.WX[i];tyy[i]=next==='cluster'?TCY[i]:next==='area'?AY[i]:D.WY[i];}
   const t0=performance.now(),dur=750;
-  (function anim(t){let k=Math.min(1,(t-t0)/dur);const e=k<.5?2*k*k:1-Math.pow(-2*k+2,2)/2;for(let i=0;i<N;i++){PX[i]=sx[i]+(txx[i]-sx[i])*e;PY[i]=sy[i]+(tyy[i]-sy[i])*e;}needs=true;if(k<1)requestAnimationFrame(anim);else{buildGrid();if(next==='area')fit();}})(t0);
+  (function anim(t){let k=Math.min(1,(t-t0)/dur);const e=k<.5?2*k*k:1-Math.pow(-2*k+2,2)/2;for(let i=0;i<N;i++){PX[i]=sx[i]+(txx[i]-sx[i])*e;PY[i]=sy[i]+(tyy[i]-sy[i])*e;}needs=true;if(k<1)requestAnimationFrame(anim);else{buildGrid();if(next==='area'||next==='cluster')fit();}})(t0);
 };
 document.getElementById('bEdges').onclick=function(){showEdges=!showEdges;this.textContent='Show all edges: '+(showEdges?'on':'off');this.classList.toggle('on',showEdges);this.setAttribute('aria-pressed',showEdges?'true':'false');needs=true;};
 document.getElementById('bLandmarks').onclick=function(){showLandmarks=!showLandmarks;this.textContent='Landmarks: '+(showLandmarks?'on':'off');this.classList.toggle('on',showLandmarks);this.setAttribute('aria-pressed',showLandmarks?'true':'false');needs=true;};
-document.getElementById('bCompare').onclick=function(){compareMode=!compareMode;compareAreas=[];this.textContent='Compare: '+(compareMode?'0/2':'off');this.classList.toggle('on',compareMode);this.setAttribute('aria-pressed',compareMode?'true':'false');updateLegendCompare();updateStats();needs=true;};
+document.getElementById('caseLimit').onchange=function(){caseLimit=Number(this.value)||0;refreshVisibility(true);};
+document.getElementById('bCompare').onclick=function(){compareMode=!compareMode;compareAreas=[];this.textContent='Compare: '+(compareMode?'0/2':'off');this.classList.toggle('on',compareMode);this.setAttribute('aria-pressed',compareMode?'true':'false');updateLegendCompare();refreshVisibility(false);};
 document.getElementById('bFit').onclick=()=>{sel=-1;fit();};
 document.getElementById('bZin').onclick=()=>zoomAt(W/2,H/2,1.45);
 document.getElementById('bZout').onclick=()=>zoomAt(W/2,H/2,1/1.45);
@@ -499,16 +531,18 @@ qEl.addEventListener('keydown',async e=>{
 const li=document.getElementById('legitems');
 const legendEls=[];
 D.IANAMES.forEach((nm,idx)=>{const d=document.createElement('div');d.className='li';d.innerHTML='<span class="sw" style="background:'+COL[idx]+'"></span><span>'+nm+'</span>';
-  d.onclick=()=>{if(compareMode){toggleCompareArea(idx);return;}if(active.has(idx)){active.delete(idx);d.classList.add('off');}else{active.add(idx);d.classList.remove('off');}needs=true;};legendEls[idx]=d;li.appendChild(d);});
-function compareEdgeCount(){if(compareAreas.length!==2)return 0;const[a,b]=compareAreas;let n=0;for(let k=0;k<E;k++){const u=D.EU[k],v=D.EV[k];if((D.IA[u]===a&&D.IA[v]===b)||(D.IA[u]===b&&D.IA[v]===a))n++;}return n;}
+  d.onclick=()=>{if(compareMode){toggleCompareArea(idx);return;}if(active.has(idx)){active.delete(idx);d.classList.add('off');}else{active.add(idx);d.classList.remove('off');}refreshVisibility(false);};legendEls[idx]=d;li.appendChild(d);});
+function compareEdgeCount(){if(compareAreas.length!==2)return 0;const[a,b]=compareAreas;let n=0;for(let k=0;k<E;k++){const u=D.EU[k],v=D.EV[k];if(!isNodeEligible(u)||!isNodeEligible(v))continue;if((D.IA[u]===a&&D.IA[v]===b)||(D.IA[u]===b&&D.IA[v]===a))n++;}return n;}
 function updateLegendCompare(){legendEls.forEach((el,idx)=>{el.classList.toggle('cmpA',compareAreas[0]===idx);el.classList.toggle('cmpB',compareAreas[1]===idx);});const b=document.getElementById('bCompare');if(compareMode)b.textContent='Compare: '+compareAreas.length+'/2';else b.textContent='Compare areas: off';}
-function toggleCompareArea(idx){const at=compareAreas.indexOf(idx);if(at>=0)compareAreas.splice(at,1);else{if(compareAreas.length>=2)compareAreas.shift();compareAreas.push(idx);}updateLegendCompare();updateStats();needs=true;}
-function setAllAreas(on){D.IANAMES.forEach((_,idx)=>{if(on)active.add(idx);else active.delete(idx);});document.querySelectorAll('#legitems .li').forEach(el=>el.classList.toggle('off',!on));needs=true;}
+function toggleCompareArea(idx){const at=compareAreas.indexOf(idx);if(at>=0)compareAreas.splice(at,1);else{if(compareAreas.length>=2)compareAreas.shift();compareAreas.push(idx);}updateLegendCompare();refreshVisibility(false);}
+function setAllAreas(on){D.IANAMES.forEach((_,idx)=>{if(on)active.add(idx);else active.delete(idx);});document.querySelectorAll('#legitems .li').forEach(el=>el.classList.toggle('off',!on));refreshVisibility(false);}
 document.getElementById('selAll').onclick=()=>{compareAreas=[];updateLegendCompare();setAllAreas(true);updateStats();};
 document.getElementById('selNone').onclick=()=>{compareAreas=[];updateLegendCompare();setAllAreas(false);updateStats();};
 document.getElementById('subline').textContent=N.toLocaleString()+' opinions · '+E.toLocaleString()+' citations';
 function updateStats(){
-  const base='<b>'+N.toLocaleString()+'</b> cases · <b>'+E.toLocaleString()+'</b> citations<br>node size = times cited · names load live from CourtListener<br>filtered to the core: 2000+ · 1975–99 cited ≥5 · pre-1975 cited ≥50';
+  const shown=shownCaseCount(), edges=shownEdgeCount();
+  const limit=caseLimit?('top '+caseLimit.toLocaleString()):'all cases';
+  const base='<b>'+shown.toLocaleString()+'</b> shown cases · <b>'+edges.toLocaleString()+'</b> shown citations<br>'+limit+' of '+N.toLocaleString()+' cases · node size = times cited<br>filtered to the core: 2000+ · 1975–99 cited ≥5 · pre-1975 cited ≥50';
   const cmp=compareMode?'<br><b>Compare:</b> '+(compareAreas.length?compareAreas.map(i=>D.IANAMES[i]).join(' + '):'choose areas')+(compareAreas.length===2?' · '+compareEdgeCount().toLocaleString()+' cross-citations':''):'';
   const p=pathNodes.length?'<br><b>Path:</b> '+pathNodes.length+' cases from '+esc(shortTitle(pathStart))+' to '+esc(shortTitle(pathEnd)):'';
   document.getElementById('stats').innerHTML=base+cmp+p;
