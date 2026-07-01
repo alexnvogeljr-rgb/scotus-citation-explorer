@@ -66,6 +66,8 @@ canvas.drag{cursor:grabbing}
 .section{border-top:1px solid var(--line);padding-top:9px;margin-top:9px}
 .section h3{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--mut);margin:0 0 6px}
 .casebtn{display:block;width:100%;margin:4px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.casebtn.practice{white-space:normal;line-height:1.25}
+.casebtn .meta{color:var(--mut);font-size:10.5px}
 .pathstat{font-size:11px;color:var(--mut);margin-top:5px}
 .note{position:absolute;top:calc(var(--bar-h) + 10px);left:50%;transform:translateX(-50%);background:#1a2336;border:1px solid #2b3a5c;color:#cdd8ee;padding:6px 12px;border-radius:20px;font-size:11.5px;z-index:6;white-space:nowrap}
 .area-layout .note,.cluster-layout .note,.area-layout #stats{display:none}
@@ -89,12 +91,16 @@ kbd{background:#222637;border:1px solid var(--line);border-bottom-width:2px;bord
   #bLandmarks{grid-column:1/3;grid-row:3}
   #bCompare{grid-column:3/5;grid-row:3}
   #caseLimit{grid-column:1/3;grid-row:4}
-  #bFit{grid-column:3;grid-row:4}
-  #bClear{grid-column:4;grid-row:4}
+  #bPractice{grid-column:3/5;grid-row:4}
   #yearCtl{grid-column:1/-1;grid-row:5}
   #yearCtl .range{width:100%}
-  #bZin{grid-column:1;grid-row:6}
-  #bZout{grid-column:2;grid-row:6}
+  #bEra{grid-column:1/3;grid-row:6}
+  #eraA{grid-column:3/5;grid-row:6}
+  #eraB{grid-column:1/3;grid-row:7}
+  #bFit{grid-column:3;grid-row:7}
+  #bClear{grid-column:4;grid-row:7}
+  #bZin{grid-column:1;grid-row:8}
+  #bZout{grid-column:2;grid-row:8}
   .spacer{display:none}
   #panel{left:8px;right:8px;top:calc(var(--bar-h) + 8px);width:auto;max-height:42vh}
 }
@@ -114,6 +120,7 @@ kbd{background:#222637;border:1px solid var(--line);border-bottom-width:2px;bord
   <button id="bLayout" type="button">Layout: Citation web</button>
   <button id="bEdges" type="button" aria-pressed="false">Show all edges: off</button>
   <button id="bLandmarks" type="button" class="on" aria-pressed="true">Landmarks: on</button>
+  <button id="bPractice" type="button" aria-pressed="false">Practitioner: off</button>
   <select id="caseLimit" aria-label="Shown cases">
     <option value="0">Cases: all</option>
     <option value="1000">Top 1,000</option>
@@ -128,6 +135,9 @@ kbd{background:#222637;border:1px solid var(--line);border-bottom-width:2px;bord
       <input id="yearMax" type="range" aria-label="Maximum decision year">
     </div>
   </div>
+  <button id="bEra" type="button" aria-pressed="false">Era compare: off</button>
+  <select id="eraA" aria-label="First era"></select>
+  <select id="eraB" aria-label="Second era"></select>
   <button id="bCompare" type="button" aria-pressed="false">Compare areas: off</button>
   <button id="bZin" type="button" title="Zoom in" aria-label="Zoom in">+</button>
   <button id="bZout" type="button" title="Zoom out" aria-label="Zoom out">&#8722;</button>
@@ -230,15 +240,32 @@ const TOP_ORDER=Array.from({length:N},(_,i)=>i).sort((a,b)=>(D.DEG[b]||0)-(D.DEG
 const RANK=new Int32Array(N);TOP_ORDER.forEach((i,r)=>{RANK[i]=r+1;});
 const YEAR_VALUES=D.YR.filter(y=>y>0);
 const YEAR_MIN=YEAR_VALUES.length?Math.min(...YEAR_VALUES):0, YEAR_MAX=YEAR_VALUES.length?Math.max(...YEAR_VALUES):0;
+const ERAS=[
+  {id:'marshall',name:'Marshall',lo:1801,hi:1835,color:'#7da2ff'},
+  {id:'taney',name:'Taney',lo:1836,hi:1863,color:'#9ed9ff'},
+  {id:'chase-waite',name:'Chase/Waite',lo:1864,hi:1888,color:'#86bcb6'},
+  {id:'fuller',name:'Fuller',lo:1889,hi:1910,color:'#59a14f'},
+  {id:'white-taft',name:'White/Taft',lo:1911,hi:1929,color:'#edc948'},
+  {id:'hughes-vinson',name:'Hughes-Stone-Vinson',lo:1930,hi:1952,color:'#f28e2b'},
+  {id:'warren',name:'Warren',lo:1953,hi:1968,color:'#ff9da7'},
+  {id:'burger',name:'Burger',lo:1969,hi:1985,color:'#b07aa1'},
+  {id:'rehnquist',name:'Rehnquist',lo:1986,hi:2004,color:'#d37295'},
+  {id:'roberts',name:'Roberts',lo:2005,hi:2016,color:'#76b7b2'}
+];
 let caseLimit=0;
 let yearLo=YEAR_MIN, yearHi=YEAR_MAX;
-let hover=-1, sel=-1, showEdges=false, showLandmarks=true, compareMode=false, dragging=false, didDrag=false, lastX=0,lastY=0, downX=0,downY=0;
+let hover=-1, sel=-1, showEdges=false, showLandmarks=true, compareMode=false, eraCompare=false, practitionerMode=false, dragging=false, didDrag=false, lastX=0,lastY=0, downX=0,downY=0;
+let eraA='warren', eraB='roberts';
 let compareAreas=[], pathStart=-1, pathEnd=-1, pathNodes=[], pathPairs=[], pathNodeSet=null, pathEdgeSet=null;
 let needs=true;
 function edgeKey(a,b){return a<b?a+'-'+b:b+'-'+a;}
 function passesCaseLimit(i){return !caseLimit||RANK[i]<=caseLimit;}
 function passesYear(i){const y=D.YR[i];return y>0&&y>=yearLo&&y<=yearHi;}
 function isNodeEligible(i){const ia=D.IA[i];return passesCaseLimit(i)&&passesYear(i)&&active.has(ia)&&(!compareMode||compareAreas.length===0||compareAreas.includes(ia));}
+function eraById(id){return ERAS.find(e=>e.id===id)||ERAS[0];}
+function caseEra(i){const y=D.YR[i];return ERAS.find(e=>y>=e.lo&&y<=e.hi)||null;}
+function eraRole(i){const e=caseEra(i);if(!e)return 0;if(e.id===eraA)return 1;if(e.id===eraB)return 2;return 0;}
+function eraRoleFor(i,a,b){const e=caseEra(i);if(!e)return 0;if(e.id===a)return 1;if(e.id===b)return 2;return 0;}
 function shownCaseCount(){let n=0;for(let i=0;i<N;i++)if(isNodeEligible(i))n++;return n;}
 function shownEdgeCount(){let n=0;for(let k=0;k<E;k++)if(isNodeEligible(D.EU[k])&&isNodeEligible(D.EV[k]))n++;return n;}
 function shownNeighbors(arr){return arr.filter(isNodeEligible);}
@@ -268,6 +295,44 @@ function setYearRange(lo,hi,moved){
   if(lo===yearLo&&hi===yearHi)return;
   yearLo=lo;yearHi=hi;updateYearControl();refreshVisibility(false);
 }
+function syncEraControls(){
+  const a=document.getElementById('eraA'), b=document.getElementById('eraB'), btn=document.getElementById('bEra');
+  a.value=eraA;b.value=eraB;
+  btn.textContent='Era compare: '+(eraCompare?'on':'off');
+  btn.classList.toggle('on',eraCompare);btn.setAttribute('aria-pressed',eraCompare?'true':'false');
+}
+function eraCounts(){
+  let aNodes=0,bNodes=0,aCitesB=0,bCitesA=0;
+  for(let i=0;i<N;i++){if(!isNodeEligible(i))continue;const r=eraRoleFor(i,eraA,eraB);if(r===1)aNodes++;else if(r===2)bNodes++;}
+  for(let k=0;k<E;k++){
+    const u=D.EU[k],v=D.EV[k];if(!isNodeEligible(u)||!isNodeEligible(v))continue;
+    const ru=eraRoleFor(u,eraA,eraB), rv=eraRoleFor(v,eraA,eraB);
+    if(ru===1&&rv===2)aCitesB++;else if(ru===2&&rv===1)bCitesA++;
+  }
+  return{aNodes,bNodes,aCitesB,bCitesA};
+}
+function authorityCandidates(i,max){
+  const m=new Map(), y0=D.YR[i]||9999;
+  function rec(j){let r=m.get(j);if(!r){r={i:j,score:0,direct:false,later:false,co:0};m.set(j,r);}return r;}
+  function add(j,score,kind){if(j===i||j<0||j>=N||!isNodeEligible(j))return;const r=rec(j);r.score+=score;if(kind==='direct')r.direct=true;else if(kind==='later')r.later=true;else if(kind==='co')r.co++;}
+  for(const j of outA[i])add(j,95,'direct');
+  for(const j of inA[i])add(j,42,'later');
+  const later=shownNeighbors(inA[i]).sort((a,b)=>(D.DEG[b]||0)-(D.DEG[a]||0)).slice(0,80);
+  for(const c of later)for(const j of outA[c])if(j!==i)add(j,12,'co');
+  const direct=shownNeighbors(outA[i]).sort((a,b)=>(D.DEG[b]||0)-(D.DEG[a]||0)).slice(0,50);
+  for(const c of direct)for(const j of inA[c])if(j!==i&&D.YR[j]<=y0+8)add(j,4,'co');
+  return Array.from(m.values()).map(r=>{
+    r.score+=Math.log1p(D.DEG[r.i]||0)*11;
+    if((D.YR[r.i]||0)<=y0)r.score+=8;
+    return r;
+  }).sort((a,b)=>b.score-a.score).slice(0,max);
+}
+function authorityReason(r){
+  const bits=[];if(r.direct)bits.push('cited by this case');if(r.later)bits.push('later treatment');if(r.co)bits.push('co-cited '+r.co+'x');
+  return bits.slice(0,2).join(' · ')||'nearby authority';
+}
+function practiceButton(r){return '<button class="casebtn practice" data-case="'+r.i+'">'+esc(shortTitle(r.i))+' <span class="meta">'+(D.YR[r.i]||'')+' · '+esc(authorityReason(r))+'</span></button>';}
+function practiceList(i,max){const arr=authorityCandidates(i,max);return arr.map(practiceButton).join('')||'<div class="meta">No nearby authorities in the current filters</div>';}
 let grid=null, GCELL=7, GW=0, GMINX=0, GMINY=0;
 function buildGrid(){
   let minx=1e9,miny=1e9,maxx=-1e9,maxy=-1e9;
@@ -394,7 +459,16 @@ function drawClusterBoundaries(labelsOnly){
 function draw(){
   ctx.clearRect(0,0,W,H);
   drawClusterBoundaries(false);
-  if(compareMode&&compareAreas.length===2&&!dragging){
+  if(eraCompare&&!dragging){
+    ctx.lineWidth=0.75;ctx.beginPath();
+    for(let k=0;k<E;k++){
+      const u=D.EU[k],v=D.EV[k];if(!isNodeEligible(u)||!isNodeEligible(v))continue;
+      const ru=eraRole(u),rv=eraRole(v);if(!ru||!rv||ru===rv)continue;
+      const a=world2screen(PX[u],PY[u]),b=world2screen(PX[v],PY[v]);
+      ctx.strokeStyle=ru===1?'rgba(125,162,255,0.30)':'rgba(255,190,95,0.30)';
+      ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke();
+    }
+  } else if(compareMode&&compareAreas.length===2&&!dragging){
     const [a0,a1]=compareAreas;ctx.strokeStyle='rgba(125,162,255,0.18)';ctx.lineWidth=0.7;ctx.beginPath();
     for(let k=0;k<E;k++){const u=D.EU[k],v=D.EV[k];if(!isNodeEligible(u)||!isNodeEligible(v))continue;const cross=(D.IA[u]===a0&&D.IA[v]===a1)||(D.IA[u]===a1&&D.IA[v]===a0);if(!cross)continue;const a=world2screen(PX[u],PY[u]),b=world2screen(PX[v],PY[v]);ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);}
     ctx.stroke();
@@ -404,6 +478,9 @@ function draw(){
     ctx.stroke();
   }
   const focus=hover>=0?hover:sel;
+  const practiceFocus=practitionerMode&&sel>=0;
+  const practiceRows=practiceFocus?authorityCandidates(sel,10):[];
+  const practiceSet=practiceFocus?new Set([sel,...practiceRows.map(r=>r.i)]):null;
   if(focus>=0){
     ctx.lineWidth=0.8;
     ctx.strokeStyle='rgba(255,210,120,0.55)';ctx.beginPath();
@@ -422,9 +499,14 @@ function draw(){
     let r=rad(i); let al=1;
     if(pathNodeSet&&pathNodes.length){if(pathNodeSet.has(i)){r+=1.8;al=1;}else{al=0.11;}}
     if(dim){ if(nb.has(i)){al=1; r=i===focus?r+1.5:r;} else {al=0.12;} }
+    const er=eraCompare?eraRole(i):0;
+    if(eraCompare){if(er){al=Math.max(al,0.94);r+=0.6;}else al=Math.min(al,0.13);}
+    if(practiceFocus){if(practiceSet.has(i)){al=1;if(i!==sel)r+=1.2;}else al=Math.min(al,0.08);}
     ctx.globalAlpha=al; ctx.fillStyle=COL[ia];
     ctx.beginPath();ctx.arc(p[0],p[1],r,0,6.2832);ctx.fill();
     ctx.strokeStyle='rgba(4,6,12,0.54)';ctx.lineWidth=Math.max(0.35,Math.min(0.9,r*0.14));ctx.stroke();
+    if(er){ctx.globalAlpha=1;ctx.lineWidth=1.5;ctx.strokeStyle=er===1?eraById(eraA).color:eraById(eraB).color;ctx.beginPath();ctx.arc(p[0],p[1],r+2.4,0,6.2832);ctx.stroke();}
+    if(practiceFocus&&practiceSet.has(i)&&i!==sel){ctx.globalAlpha=1;ctx.lineWidth=1.4;ctx.strokeStyle='rgba(156,220,155,0.9)';ctx.beginPath();ctx.arc(p[0],p[1],r+3.8,0,6.2832);ctx.stroke();}
     if(i===focus){ctx.globalAlpha=1;ctx.lineWidth=1.5;ctx.strokeStyle='#fff';ctx.beginPath();ctx.arc(p[0],p[1],r+3,0,6.2832);ctx.stroke();}
     if(i===pathStart||i===pathEnd){ctx.globalAlpha=1;ctx.lineWidth=2;ctx.strokeStyle=i===pathStart?'#ffe28a':'#9ed9ff';ctx.beginPath();ctx.arc(p[0],p[1],r+5,0,6.2832);ctx.stroke();}
   }
@@ -530,11 +612,13 @@ function pathLabel(){if(pathStart<0&&pathEnd<0)return 'No path endpoints set';re
 function renderPanel(i){
   if(i<0){panelEl.classList.add('hidden');return;}
   const id=D.IDS[i], title=titleFor(i);
+  const practice=practitionerMode?'<div class="section"><h3>Authorities to check</h3><div class="meta">High-citation nearby authorities; verify current treatment before relying.</div>'+practiceList(i,8)+'</div>':'';
   panelEl.classList.remove('hidden');
   panelEl.innerHTML='<div class="ph"><h2>'+esc(title)+'</h2><button class="x" data-act="close">×</button></div>'+
     '<div class="meta">'+(D.YR[i]||'Unknown year')+' &#183; '+esc(D.IANAMES[D.IA[i]])+'<br>Cited by '+D.DEG[i]+' later opinions &#183; cites '+shownNeighbors(outA[i]).length+' shown<br>CourtListener #'+esc(id)+'</div>'+
     '<div class="pbtns"><button data-act="start">Set path start</button><button data-act="end">Set path end</button><a href="'+esc(caseUrl(i))+'" target="_blank" rel="noopener">Open CourtListener</a><button data-act="clearPath">Clear path</button></div>'+
     '<div class="pathstat">'+pathLabel()+'</div>'+
+    practice+
     '<div class="section"><h3>Cites</h3>'+caseList(outA[i],7)+'</div>'+
     '<div class="section"><h3>Cited by</h3>'+caseList(inA[i],7)+'</div>';
 }
@@ -562,7 +646,7 @@ function setPathPoint(which,i){if(which==='start')pathStart=i;else pathEnd=i;upd
 function selectCase(i,zoom){
   sel=i; if(!(D.NAME&&D.NAME[i])) fetchName(i);
   if(zoom){const sc=Math.max(scale,6);scale=sc;tx=W/2-PX[i]*sc;ty=H/2-PY[i]*sc;}
-  renderPanel(i);needs=true;
+  renderPanel(i);updateStats();needs=true;
 }
 function focusCase(i){selectCase(i,true);}
 function localSearch(v){
@@ -635,7 +719,13 @@ document.getElementById('caseLimit').onchange=function(){caseLimit=Number(this.v
 const yearMinEl=document.getElementById('yearMin'), yearMaxEl=document.getElementById('yearMax');
 yearMinEl.addEventListener('input',()=>setYearRange(yearMinEl.value,yearHi,'lo'));
 yearMaxEl.addEventListener('input',()=>setYearRange(yearLo,yearMaxEl.value,'hi'));
-document.getElementById('bCompare').onclick=function(){compareMode=!compareMode;compareAreas=[];this.textContent='Compare: '+(compareMode?'0/2':'off');this.classList.toggle('on',compareMode);this.setAttribute('aria-pressed',compareMode?'true':'false');updateLegendCompare();refreshVisibility(false);};
+const eraAEl=document.getElementById('eraA'), eraBEl=document.getElementById('eraB');
+for(const el of [eraAEl,eraBEl])for(const e of ERAS){const o=document.createElement('option');o.value=e.id;o.textContent=e.name;el.appendChild(o);}
+eraAEl.onchange=function(){eraA=this.value;if(eraA===eraB){eraB=ERAS.find(e=>e.id!==eraA).id;}syncEraControls();updateStats();needs=true;};
+eraBEl.onchange=function(){eraB=this.value;if(eraA===eraB){eraA=ERAS.find(e=>e.id!==eraB).id;}syncEraControls();updateStats();needs=true;};
+document.getElementById('bEra').onclick=function(){eraCompare=!eraCompare;if(eraCompare&&compareMode){compareMode=false;compareAreas=[];updateLegendCompare();}syncEraControls();updateStats();needs=true;};
+document.getElementById('bPractice').onclick=function(){practitionerMode=!practitionerMode;this.textContent='Practitioner: '+(practitionerMode?'on':'off');this.classList.toggle('on',practitionerMode);this.setAttribute('aria-pressed',practitionerMode?'true':'false');if(sel>=0)renderPanel(sel);updateStats();needs=true;};
+document.getElementById('bCompare').onclick=function(){compareMode=!compareMode;if(compareMode)eraCompare=false;compareAreas=[];syncEraControls();this.textContent='Compare: '+(compareMode?'0/2':'off');this.classList.toggle('on',compareMode);this.setAttribute('aria-pressed',compareMode?'true':'false');updateLegendCompare();refreshVisibility(false);};
 document.getElementById('bFit').onclick=()=>{sel=-1;fit();};
 document.getElementById('bZin').onclick=()=>zoomAt(W/2,H/2,1.45);
 document.getElementById('bZout').onclick=()=>zoomAt(W/2,H/2,1/1.45);
@@ -664,10 +754,14 @@ function updateStats(){
   const years=yearLo===YEAR_MIN&&yearHi===YEAR_MAX?'all years':yearLo+'-'+yearHi;
   const base='<b>'+shown.toLocaleString()+'</b> shown cases · <b>'+edges.toLocaleString()+'</b> shown citations<br>'+limit+' · '+years+' · node size = times cited<br>filtered to the core: 2000+ · 1975–99 cited ≥5 · pre-1975 cited ≥50';
   const cmp=compareMode?'<br><b>Compare:</b> '+(compareAreas.length?compareAreas.map(i=>D.IANAMES[i]).join(' + '):'choose areas')+(compareAreas.length===2?' · '+compareEdgeCount().toLocaleString()+' cross-citations':''):'';
+  const ec=eraCompare?eraCounts():null;
+  const era=eraCompare?'<br><b>Era:</b> '+esc(eraById(eraA).name)+' '+ec.aNodes.toLocaleString()+' cases · '+esc(eraById(eraB).name)+' '+ec.bNodes.toLocaleString()+' cases · '+(ec.aCitesB+ec.bCitesA).toLocaleString()+' cross-era citations':'';
+  const prac=practitionerMode?'<br><b>Practitioner:</b> '+(sel>=0?authorityCandidates(sel,8).length+' nearby authorities for '+esc(shortTitle(sel)):'select a case'):'';
   const p=pathNodes.length?'<br><b>Path:</b> '+pathNodes.length+' cases from '+esc(shortTitle(pathStart))+' to '+esc(shortTitle(pathEnd)):'';
-  document.getElementById('stats').innerHTML=base+cmp+p;
+  document.getElementById('stats').innerHTML=base+cmp+era+prac+p;
 }
 updateYearControl();
+syncEraControls();
 updateStats();
 window.addEventListener('resize',()=>{DPR=Math.min(2,window.devicePixelRatio||1);resize();});
 buildAreaLayout();buildClusterLayout();loadStaticNames();resize();buildGrid();fit();loop();
