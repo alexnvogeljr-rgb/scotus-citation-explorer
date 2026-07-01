@@ -401,6 +401,11 @@ function loop(){ if(needs){try{draw();}catch(err){console.error('draw error',err
 let lastMouse={x:0,y:0};
 const CACHE_KEY='scotus-case-name-cache-v1';
 let storedNames={};try{storedNames=JSON.parse(localStorage.getItem(CACHE_KEY)||'{}')||{};}catch(e){}
+const NAME_CACHE_VERSION='20260701-575';
+const NAME_CACHE_URLS=[
+  'case_names.json?v='+NAME_CACHE_VERSION,
+  'https://raw.githubusercontent.com/alexnvogeljr-rgb/scotus-citation-explorer/main/case_names.json?v='+NAME_CACHE_VERSION
+];
 const nameCache={...storedNames}, citeCache={}, urlCache={}, tipEl=document.getElementById('tip'), qEl=document.getElementById('q'), panelEl=document.getElementById('panel');
 let lookupPausedUntil=0, hoverFetchTimer=0;
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
@@ -457,14 +462,20 @@ function applyNameRecord(id,rec){
   if(typeof rec==='string'){nameCache[id]=rec;}
   else{nameCache[id]=rec.name||rec.case_name||rec.caseName||'';citeCache[id]=rec.citation||rec.us_cite||rec.usCite||'';urlCache[id]=absoluteCourtListenerUrl(rec.url||rec.absolute_url||'');}
 }
-function loadStaticNames(){
-  fetch('case_names.json',{cache:'force-cache'}).then(r=>r.ok?r.json():null).then(j=>{
-    if(!j)return;
-    for(const id in j)applyNameRecord(id,j[id]);
-    saveNameCache();needs=true;
-    if(hover>=0)renderTip(hover,lastMouse.x,lastMouse.y);
-    if(sel>=0)renderPanel(sel);
-  }).catch(()=>{});
+async function loadStaticNames(){
+  for(const url of NAME_CACHE_URLS){
+    try{
+      const r=await fetch(url,{cache:'no-store'});
+      if(!r.ok)continue;
+      const j=await r.json();
+      if(!j||Object.keys(j).length<500)continue;
+      for(const id in j)applyNameRecord(id,j[id]);
+      saveNameCache();needs=true;
+      if(hover>=0)renderTip(hover,lastMouse.x,lastMouse.y);
+      if(sel>=0)renderPanel(sel);
+      break;
+    }catch(e){}
+  }
 }
 function renderTip(i,x,y){
   if(i<0){ tipEl.style.display='none'; return; }
