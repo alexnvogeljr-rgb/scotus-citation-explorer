@@ -21,6 +21,13 @@ canvas.drag{cursor:grabbing}
 .bar input,.bar button,.bar select{background:#171a26;border:1px solid var(--line);color:var(--ink);border-radius:7px;padding:6px 9px;font-size:12px;min-height:32px}
 .bar input{width:min(28vw,270px);min-width:190px}
 .bar select{cursor:pointer;white-space:nowrap;appearance:auto}
+.rangectl{display:grid;grid-template-columns:auto 150px;gap:8px;align-items:center;background:#171a26;border:1px solid var(--line);border-radius:7px;padding:5px 9px;min-height:32px}
+.rangectl span{color:#cdd8ee;font-size:11.5px;white-space:nowrap}
+.range{--loPct:0%;--hiPct:100%;position:relative;width:150px;height:18px;background:linear-gradient(to right,#293044 0 var(--loPct),#7da2ff var(--loPct) var(--hiPct),#293044 var(--hiPct) 100%);border-radius:99px}
+.range input{position:absolute;inset:0;width:100%;height:18px;margin:0;background:none;appearance:none;pointer-events:none}
+.range input::-webkit-slider-thumb{appearance:none;width:14px;height:14px;border-radius:50%;background:#e7ecf5;border:2px solid #1b2236;box-shadow:0 0 0 1px #7da2ff;pointer-events:auto;cursor:pointer}
+.range input::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:#e7ecf5;border:2px solid #1b2236;box-shadow:0 0 0 1px #7da2ff;pointer-events:auto;cursor:pointer}
+.range input::-webkit-slider-runnable-track{height:18px;background:transparent}.range input::-moz-range-track{height:18px;background:transparent}
 .bar input.loading{border-color:#7da2ff}
 .bar button{cursor:pointer;white-space:nowrap} .bar button:hover{border-color:#3a4d7a}
 .bar button:focus-visible,.bar input:focus-visible,.bar select:focus-visible{outline:2px solid #7da2ff;outline-offset:2px}
@@ -42,6 +49,11 @@ canvas.drag{cursor:grabbing}
 #tip .t{font-weight:700;margin-bottom:3px}
 #tip .m{color:var(--mut);font-size:11px}
 #tip .go{color:#7da2ff;font-size:11px;margin-top:4px}
+#tip .edgekey{display:flex;flex-wrap:wrap;gap:5px 10px;margin-top:7px;color:#c9d3ee;font-size:11px;line-height:1.2}
+#tip .edgekey span{display:inline-flex;align-items:center;gap:5px}
+#tip .edgekey i{display:inline-block;width:18px;height:3px;border-radius:99px}
+#tip .edgekey .cites{background:rgba(255,210,120,0.88)}
+#tip .edgekey .citedby{background:rgba(120,200,255,0.86)}
 #panel{position:absolute;top:calc(var(--bar-h) + 12px);right:12px;width:min(360px,calc(100vw - 24px));max-height:calc(100vh - var(--bar-h) - 24px);overflow:auto;background:#10131dd9;border:1px solid var(--line);border-radius:10px;box-shadow:0 12px 36px #0009;backdrop-filter:blur(8px);z-index:7;padding:12px}
 #panel.hidden{display:none}
 .ph{display:flex;align-items:flex-start;gap:10px;margin-bottom:9px}
@@ -79,8 +91,10 @@ kbd{background:#222637;border:1px solid var(--line);border-bottom-width:2px;bord
   #caseLimit{grid-column:1/3;grid-row:4}
   #bFit{grid-column:3;grid-row:4}
   #bClear{grid-column:4;grid-row:4}
-  #bZin{grid-column:1;grid-row:5}
-  #bZout{grid-column:2;grid-row:5}
+  #yearCtl{grid-column:1/-1;grid-row:5}
+  #yearCtl .range{width:100%}
+  #bZin{grid-column:1;grid-row:6}
+  #bZout{grid-column:2;grid-row:6}
   .spacer{display:none}
   #panel{left:8px;right:8px;top:calc(var(--bar-h) + 8px);width:auto;max-height:42vh}
 }
@@ -107,6 +121,13 @@ kbd{background:#222637;border:1px solid var(--line);border-bottom-width:2px;bord
     <option value="100">Top 100</option>
     <option value="50">Top 50</option>
   </select>
+  <div id="yearCtl" class="rangectl" aria-label="Decision year range">
+    <span id="yearLbl">Years: all</span>
+    <div id="yearRange" class="range">
+      <input id="yearMin" type="range" aria-label="Minimum decision year">
+      <input id="yearMax" type="range" aria-label="Maximum decision year">
+    </div>
+  </div>
   <button id="bCompare" type="button" aria-pressed="false">Compare areas: off</button>
   <button id="bZin" type="button" title="Zoom in" aria-label="Zoom in">+</button>
   <button id="bZout" type="button" title="Zoom out" aria-label="Zoom out">&#8722;</button>
@@ -207,13 +228,17 @@ const active=new Set(D.IANAMES.map((_,i)=>i));
 const LANDMARKS=Array.from({length:N},(_,i)=>i).sort((a,b)=>(D.DEG[b]||0)-(D.DEG[a]||0)).slice(0,50);
 const TOP_ORDER=Array.from({length:N},(_,i)=>i).sort((a,b)=>(D.DEG[b]||0)-(D.DEG[a]||0));
 const RANK=new Int32Array(N);TOP_ORDER.forEach((i,r)=>{RANK[i]=r+1;});
+const YEAR_VALUES=D.YR.filter(y=>y>0);
+const YEAR_MIN=YEAR_VALUES.length?Math.min(...YEAR_VALUES):0, YEAR_MAX=YEAR_VALUES.length?Math.max(...YEAR_VALUES):0;
 let caseLimit=0;
+let yearLo=YEAR_MIN, yearHi=YEAR_MAX;
 let hover=-1, sel=-1, showEdges=false, showLandmarks=true, compareMode=false, dragging=false, didDrag=false, lastX=0,lastY=0, downX=0,downY=0;
 let compareAreas=[], pathStart=-1, pathEnd=-1, pathNodes=[], pathPairs=[], pathNodeSet=null, pathEdgeSet=null;
 let needs=true;
 function edgeKey(a,b){return a<b?a+'-'+b:b+'-'+a;}
 function passesCaseLimit(i){return !caseLimit||RANK[i]<=caseLimit;}
-function isNodeEligible(i){const ia=D.IA[i];return passesCaseLimit(i)&&active.has(ia)&&(!compareMode||compareAreas.length===0||compareAreas.includes(ia));}
+function passesYear(i){const y=D.YR[i];return y>0&&y>=yearLo&&y<=yearHi;}
+function isNodeEligible(i){const ia=D.IA[i];return passesCaseLimit(i)&&passesYear(i)&&active.has(ia)&&(!compareMode||compareAreas.length===0||compareAreas.includes(ia));}
 function shownCaseCount(){let n=0;for(let i=0;i<N;i++)if(isNodeEligible(i))n++;return n;}
 function shownEdgeCount(){let n=0;for(let k=0;k<E;k++)if(isNodeEligible(D.EU[k])&&isNodeEligible(D.EV[k]))n++;return n;}
 function shownNeighbors(arr){return arr.filter(isNodeEligible);}
@@ -226,6 +251,22 @@ function refreshVisibility(refit){
   if(sel>=0)renderPanel(sel);
   updateStats();
   if(refit)fit(); else needs=true;
+}
+function updateYearControl(){
+  const loEl=document.getElementById('yearMin'), hiEl=document.getElementById('yearMax'), lbl=document.getElementById('yearLbl'), range=document.getElementById('yearRange'), ctl=document.getElementById('yearCtl');
+  if(!YEAR_MIN||!YEAR_MAX||YEAR_MIN===YEAR_MAX){ctl.style.display='none';return;}
+  loEl.min=hiEl.min=YEAR_MIN;loEl.max=hiEl.max=YEAR_MAX;loEl.step=hiEl.step=1;
+  loEl.value=yearLo;hiEl.value=yearHi;
+  const span=YEAR_MAX-YEAR_MIN, loPct=((yearLo-YEAR_MIN)/span)*100, hiPct=((yearHi-YEAR_MIN)/span)*100;
+  range.style.setProperty('--loPct',loPct+'%');range.style.setProperty('--hiPct',hiPct+'%');
+  lbl.textContent=yearLo===YEAR_MIN&&yearHi===YEAR_MAX?'Years: all':'Years: '+yearLo+'-'+yearHi;
+}
+function setYearRange(lo,hi,moved){
+  lo=clamp(Math.round(Number(lo)||YEAR_MIN),YEAR_MIN,YEAR_MAX);
+  hi=clamp(Math.round(Number(hi)||YEAR_MAX),YEAR_MIN,YEAR_MAX);
+  if(lo>hi){if(moved==='lo')hi=lo;else lo=hi;}
+  if(lo===yearLo&&hi===yearHi)return;
+  yearLo=lo;yearHi=hi;updateYearControl();refreshVisibility(false);
 }
 let grid=null, GCELL=7, GW=0, GMINX=0, GMINY=0;
 function buildGrid(){
@@ -249,7 +290,7 @@ function fit(){
   let minx=1e9,miny=1e9,maxx=-1e9,maxy=-1e9;
   let found=0;
   for(let i=0;i<N;i++){if(!isNodeEligible(i))continue;if(layout!=='area'&&PY[i]>1010)continue;if(PX[i]<minx)minx=PX[i];if(PY[i]<miny)miny=PY[i];if(PX[i]>maxx)maxx=PX[i];if(PY[i]>maxy)maxy=PY[i];found++;}
-  if(!found){for(let i=0;i<N;i++){if(!passesCaseLimit(i))continue;if(layout!=='area'&&PY[i]>1010)continue;if(PX[i]<minx)minx=PX[i];if(PY[i]<miny)miny=PY[i];if(PX[i]>maxx)maxx=PX[i];if(PY[i]>maxy)maxy=PY[i];found++;}}
+  if(!found){for(let i=0;i<N;i++){if(!passesCaseLimit(i)||!passesYear(i))continue;if(layout!=='area'&&PY[i]>1010)continue;if(PX[i]<minx)minx=PX[i];if(PY[i]<miny)miny=PY[i];if(PX[i]>maxx)maxx=PX[i];if(PY[i]>maxy)maxy=PY[i];found++;}}
   if(!found)return;
   const pad=60, topPad=layout==='area'?(barEl.offsetHeight||58)+36:pad, bottomPad=60;
   const sx=(W-pad*2)/(maxx-minx), sy=(H-topPad-bottomPad)/(maxy-miny); scale=Math.min(sx,sy);
@@ -358,7 +399,7 @@ function draw(){
     for(let k=0;k<E;k++){const u=D.EU[k],v=D.EV[k];if(!isNodeEligible(u)||!isNodeEligible(v))continue;const cross=(D.IA[u]===a0&&D.IA[v]===a1)||(D.IA[u]===a1&&D.IA[v]===a0);if(!cross)continue;const a=world2screen(PX[u],PY[u]),b=world2screen(PX[v],PY[v]);ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);}
     ctx.stroke();
   } else if(showEdges && !dragging){
-    ctx.strokeStyle='rgba(110,150,255,0.05)';ctx.lineWidth=0.4;ctx.beginPath();
+    ctx.strokeStyle='rgba(110,150,255,0.032)';ctx.lineWidth=0.4;ctx.beginPath();
     for(let k=0;k<E;k++){const u=D.EU[k],v=D.EV[k];if(!isNodeEligible(u)||!isNodeEligible(v))continue;const a=world2screen(PX[u],PY[u]),b=world2screen(PX[v],PY[v]);ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);}
     ctx.stroke();
   }
@@ -481,7 +522,7 @@ function renderTip(i,x,y){
   if(i<0){ tipEl.style.display='none'; return; }
   const tw=Math.min(300,W-24); tipEl.style.maxWidth=tw+'px';
   tipEl.style.display='block'; tipEl.style.left=Math.max(12,Math.min(W-tw-12,x+14))+'px'; tipEl.style.top=Math.max(12,Math.min(H-110,y+14))+'px';
-  tipEl.innerHTML='<div class="t">'+esc(titleFor(i))+'</div><div class="m">'+(D.YR[i]||'&#8212;')+' &#183; '+esc(D.IANAMES[D.IA[i]])+'<br>Cited by '+D.DEG[i]+' later opinions &#183; cites '+shownNeighbors(outA[i]).length+' shown</div><div class="go">click for case details &#8594;</div>';
+  tipEl.innerHTML='<div class="t">'+esc(titleFor(i))+'</div><div class="m">'+(D.YR[i]||'&#8212;')+' &#183; '+esc(D.IANAMES[D.IA[i]])+'<br>Cited by '+D.DEG[i]+' later opinions &#183; cites '+shownNeighbors(outA[i]).length+' shown</div><div class="edgekey"><span><i class="cites"></i>cites to</span><span><i class="citedby"></i>cited by</span></div><div class="go">click for case details &#8594;</div>';
 }
 function caseButton(i){return '<button class="casebtn" data-case="'+i+'">'+esc(shortTitle(i))+' <span class="meta">'+(D.YR[i]||'')+'</span></button>';}
 function caseList(arr,max){return shownNeighbors(arr).sort((a,b)=>(D.DEG[b]||0)-(D.DEG[a]||0)).slice(0,max).map(caseButton).join('')||'<div class="meta">None in this filtered graph</div>';}
@@ -591,6 +632,9 @@ document.getElementById('bLayout').onclick=function(){
 document.getElementById('bEdges').onclick=function(){showEdges=!showEdges;this.textContent='Show all edges: '+(showEdges?'on':'off');this.classList.toggle('on',showEdges);this.setAttribute('aria-pressed',showEdges?'true':'false');needs=true;};
 document.getElementById('bLandmarks').onclick=function(){showLandmarks=!showLandmarks;this.textContent='Landmarks: '+(showLandmarks?'on':'off');this.classList.toggle('on',showLandmarks);this.setAttribute('aria-pressed',showLandmarks?'true':'false');needs=true;};
 document.getElementById('caseLimit').onchange=function(){caseLimit=Number(this.value)||0;refreshVisibility(true);};
+const yearMinEl=document.getElementById('yearMin'), yearMaxEl=document.getElementById('yearMax');
+yearMinEl.addEventListener('input',()=>setYearRange(yearMinEl.value,yearHi,'lo'));
+yearMaxEl.addEventListener('input',()=>setYearRange(yearLo,yearMaxEl.value,'hi'));
 document.getElementById('bCompare').onclick=function(){compareMode=!compareMode;compareAreas=[];this.textContent='Compare: '+(compareMode?'0/2':'off');this.classList.toggle('on',compareMode);this.setAttribute('aria-pressed',compareMode?'true':'false');updateLegendCompare();refreshVisibility(false);};
 document.getElementById('bFit').onclick=()=>{sel=-1;fit();};
 document.getElementById('bZin').onclick=()=>zoomAt(W/2,H/2,1.45);
@@ -617,11 +661,13 @@ document.getElementById('subline').textContent=N.toLocaleString()+' opinions · 
 function updateStats(){
   const shown=shownCaseCount(), edges=shownEdgeCount();
   const limit=caseLimit?('top '+caseLimit.toLocaleString()):'all cases';
-  const base='<b>'+shown.toLocaleString()+'</b> shown cases · <b>'+edges.toLocaleString()+'</b> shown citations<br>'+limit+' of '+N.toLocaleString()+' cases · node size = times cited<br>filtered to the core: 2000+ · 1975–99 cited ≥5 · pre-1975 cited ≥50';
+  const years=yearLo===YEAR_MIN&&yearHi===YEAR_MAX?'all years':yearLo+'-'+yearHi;
+  const base='<b>'+shown.toLocaleString()+'</b> shown cases · <b>'+edges.toLocaleString()+'</b> shown citations<br>'+limit+' · '+years+' · node size = times cited<br>filtered to the core: 2000+ · 1975–99 cited ≥5 · pre-1975 cited ≥50';
   const cmp=compareMode?'<br><b>Compare:</b> '+(compareAreas.length?compareAreas.map(i=>D.IANAMES[i]).join(' + '):'choose areas')+(compareAreas.length===2?' · '+compareEdgeCount().toLocaleString()+' cross-citations':''):'';
   const p=pathNodes.length?'<br><b>Path:</b> '+pathNodes.length+' cases from '+esc(shortTitle(pathStart))+' to '+esc(shortTitle(pathEnd)):'';
   document.getElementById('stats').innerHTML=base+cmp+p;
 }
+updateYearControl();
 updateStats();
 window.addEventListener('resize',()=>{DPR=Math.min(2,window.devicePixelRatio||1);resize();});
 buildAreaLayout();buildClusterLayout();loadStaticNames();resize();buildGrid();fit();loop();
